@@ -302,12 +302,11 @@ func (a *App) SetNotes(n1, t1, n2, t2, n3, t3 string) error {
 	a.notes[2] = note{Text: n3, At: parseNoteDue(t3)}
 	_ = saveNotesConfig(a.notes)
 	a.notesMu.Unlock()
-
-	if c, err := a.get(); err == nil {
-		if perr := pushNotesTags(c, a); perr != nil {
-			runtimeEmit(a.ctx, "monitor-error", "notas: "+perr.Error())
-		}
-	}
+	// No immediate serial write here: a burst of SET_REGISTER frames right when
+	// the user clicks "Salvar" is what made the firmware stop responding. The
+	// not-yet-fired reminders would render "Sem notas" anyway; the registers are
+	// written when a notice fires (fireDueNote) or while the monitor loop is on
+	// the Notas page.
 	return nil
 }
 
