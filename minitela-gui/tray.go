@@ -200,33 +200,33 @@ func createTrayWindow() {
 }
 
 // loadTrayIconHICON loads the tray .ico into a Win32 HICON so it can be shown
-// next to the menu and the tooltip. It falls back silently when absent.
+// next to the menu and the tooltip. If the .ico is missing or fails to load it
+// falls back to the standard Windows application icon so the tray slot never
+// stays blank.
 func loadTrayIconHICON(path string) uintptr {
-	if path == "" {
-		return 0
+	if path != "" {
+		if b, err := os.ReadFile(path); err == nil && len(b) > 0 {
+			// Write to a temp file and use LoadImage with LR_LOADFROMFILE, since
+			// that is the reliable way to turn an on-disk .ico into a HICON.
+			tmp := filepath.Join(os.TempDir(), "minitela_tray.ico")
+			if err := os.WriteFile(tmp, b, 0o600); err == nil {
+				hi, _, _ := user32.NewProc("LoadImageW").Call(
+					0,
+					uintptr(unsafe.Pointer(windows.StringToUTF16Ptr(tmp))),
+					1, // IMAGE_ICON
+					16, 16,
+					0x0010, // LR_LOADFROMFILE
+					0,
+				)
+				_ = os.Remove(tmp)
+				if hi != 0 {
+					return hi
+				}
+			}
+		}
 	}
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return 0
-	}
-	if len(b) == 0 {
-		return 0
-	}
-	// Write to a temp file and use LoadImage with LR_LOADFROMFILE, since that is
-	// the reliable way to turn an on-disk .ico into a HICON.
-	tmp := filepath.Join(os.TempDir(), "minitela_tray.ico")
-	if err := os.WriteFile(tmp, b, 0o600); err != nil {
-		return 0
-	}
-	hi, _, _ := user32.NewProc("LoadImageW").Call(
-		0,
-		uintptr(unsafe.Pointer(windows.StringToUTF16Ptr(tmp))),
-		1, // IMAGE_ICON
-		16, 16,
-		0x0020, // LR_LOADFROMFILE
-		0,
-	)
-	_ = os.Remove(tmp)
+	// Fallback: the standard application icon (IDI_APPLICATION = 32512).
+	hi, _, _ := user32.NewProc("LoadIconW").Call(0, 32512)
 	return hi
 }
 
