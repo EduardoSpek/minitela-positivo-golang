@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 	"unicode"
 
@@ -876,6 +877,7 @@ func findPython() (string, error) {
 // executeCheck confirms a python binary actually runs.
 func executeCheck(python string) (string, error) {
 	cmd := exec.Command(python, "-c", "import PIL")
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	out, err := cmd.CombinedOutput()
 	return string(out), err
 }

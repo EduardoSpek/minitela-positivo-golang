@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 )
 
 // GimFile is a theme GIF that maps to a mini-screen image page.
@@ -104,6 +105,7 @@ im.save(sys.argv[2], 'GIF', save_all=True, loop=0)
 `
 	args := []string{"-c", script, src, gifPath}
 	cmd := exec.Command(python, args...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("conversão de imagem: %w: %s", err, strings.TrimSpace(string(out)))
 	}
@@ -128,6 +130,7 @@ with zipfile.ZipFile(src, 'r') as zin:
             zout.writestr(info, data)
 `
 	cmd := exec.Command(python, "-c", script, zipSrc, zipDst, gifName, gifPath)
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return "", fmt.Errorf("embutir gif no zip: %w: %s", err, strings.TrimSpace(string(out)))
 	}
@@ -145,6 +148,7 @@ func generateThemeAcf(work, zipPath string) ([]byte, error) {
 	}
 	cmd := exec.Command(exe, "-f", zipPath, "-m", "2", "-c", "0", "-e", "0", "-d", "1", "-o", acfOut)
 	cmd.Dir = genDir
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	var outBuf, errBuf strings.Builder
 	cmd.Stdout = &outBuf
 	cmd.Stderr = &errBuf
