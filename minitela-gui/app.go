@@ -116,6 +116,11 @@ func (a *App) Connect(port string) error {
 		// non-fatal: keep connection
 		fmt.Println("set datetime:", err)
 	}
+	// On app start the mini screen shows the Monitor page first. Non-fatal: the
+	// user can still switch pages afterwards.
+	if err := c.SetPage(PageMonitor); err != nil {
+		fmt.Println("set page monitor:", err)
+	}
 	return nil
 }
 
