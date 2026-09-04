@@ -36,6 +36,14 @@
             <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>
             Monitor
         </button>
+        <button class="nav-item" data-view="weather">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="9" r="3.2"/><path d="M13 15a4 4 0 1 1-9.5-9.5a2 2 0 1 1-2.5-2.5M13 15H14M2 15h1"/></svg>
+            Clima
+        </button>
+        <button class="nav-item" data-view="image">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="14" rx="2"/><circle cx="12" cy="10" r="3.4"/><path d="M3 10h6M3 14h6"/></svg>
+            Imagem
+        </button>
         <button class="nav-item" data-view="settings">
             <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
             Configurações
@@ -63,7 +71,6 @@
                     <div class="card">
                         <div class="card-title">Telas da mini tela <span class="hint">escolha uma ou use a tecla dedicada do notebook</span></div>
                         <div class="page-picker">
-                            <button class="page-btn" data-page="1">WhatsApp</button>
                             <button class="page-btn" data-page="2">Notas</button>
                             <button class="page-btn" data-page="3">Monitor</button>
                             <button class="page-btn" data-page="4">Clima</button>
@@ -168,9 +175,8 @@
             <div class="topbar">
                 <div>
                     <h1 class="page-title">Monitor</h1>
-                    <p class="page-dek">Acompanhe CPU, bateria e Wi-Fi, enviados à mini tela automaticamente.</p>
+                    <p class="page-dek">CPU, bateria e Wi-Fi são enviados à mini tela automaticamente em segundo plano.</p>
                 </div>
-                <button class="btn btn-primary" id="btnMonitorToggle">Iniciar</button>
             </div>
 
             <div class="stats">
@@ -191,7 +197,73 @@
 
             <div class="card" style="margin-top:20px">
                 <div class="card-title">Ao vivo na tela</div>
-                <div class="empty-hint" id="monitorHint">Inicie o monitor para ver os dados aparecendo na mini tela a cada poucos segundos.</div>
+                <div class="empty-hint" id="monitorHint">Os dados são enviados para a tela ativa automaticamente assim que o app abre — fique à vontade para usar as outras abas.</div>
+            </div>
+        </section>
+
+        <!-- Weather view -->
+        <section class="view" id="view-weather">
+            <div class="topbar">
+                <div>
+                    <h1 class="page-title">Clima</h1>
+                    <p class="page-dek">Escolha uma cidade e a previsão (5 dias) será exibida na mini tela.</p>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">Localização</div>
+                <div class="note-row">
+                    <div class="col-full">
+                        <label class="field-label" for="weatherCity">Cidade</label>
+                        <input type="text" id="weatherCity" placeholder="Ex.: São Paulo, Montevidéu, Buenos Aires..."/>
+                    </div>
+                </div>
+                <div class="controls">
+                    <button class="btn btn-primary" id="btnSaveWeather">Salvar e atualizar</button>
+                </div>
+                <div class="empty-hint" id="weatherHint">Digite uma cidade para enviar a previsão do tempo à tela.</div>
+            </div>
+
+            <div class="card" style="margin-top:16px">
+                <div class="card-title">Previsão <span class="hint" id="weatherPlace"></span></div>
+                <div class="weather-grid" id="weatherGrid">
+                    <div class="empty-hint" id="weatherEmpty">Sem dados ainda.</div>
+                </div>
+            </div>
+        </section>
+
+<!-- Imagem view -->
+        <section class="view" id="view-image">
+            <div class="topbar">
+                <div>
+                    <h1 class="page-title">Imagem</h1>
+                    <p class="page-dek">Envie uma imagem à mini tela (página Imagem). Use um .acf pré-compilado ou valide o pipeline de envio.</p>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">Enviar imagem</div>
+                <div class="note-row">
+                    <div class="col-full">
+                        <label class="field-label" for="imageFile">Arquivo (.jpg / .png / .gif)</label>
+                        <input type="file" id="imageFile" accept=".jpg,.jpeg,.png,.gif,.acf"/>
+                    </div>
+                </div>
+                <div class="note-row">
+                    <div class="col-full">
+                        <label class="field-label">Página de imagem (aplicada ao tema)</label>
+                        <div class="segmented" id="imagePageSeg">
+                            <button class="seg-btn is-active" data-page="1">Imagem 1</button>
+                            <button class="seg-btn" data-page="2">Imagem 2</button>
+                            <button class="seg-btn" data-page="3">Imagem 3</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="controls">
+                    <button class="btn btn-primary" id="btnUploadImage">Converter e enviar ao tema</button>
+                    <button class="btn btn-ghost" id="btnRestoreTheme">Recuperar tema (test OTA)</button>
+                </div>
+                <div class="empty-hint" id="imageStatus">Escolha uma imagem para converter e enviar.</div>
             </div>
         </section>
 

@@ -263,6 +263,32 @@ html, body {
     flex-wrap: wrap;
 }
 
+/* ===== Segmented control (image page picker) ===== */
+.segmented {
+    display: inline-flex;
+    border: 1px solid rgba(126, 142, 198, 0.28);
+    background: #141a30;
+    border-radius: 11px;
+    padding: 3px;
+    gap: 3px;
+}
+.seg-btn {
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-soft);
+    background: transparent;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+.seg-btn:hover { color: var(--text); }
+.seg-btn.is-active {
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    color: #fff;
+}
+
 /* ===== Brightness slider ===== */
 .range-row {
     display: flex;
@@ -523,6 +549,7 @@ input[type="range"]::-webkit-slider-thumb {
     transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
 }
 .page-btn:hover { background: #2a3454; }
+.page-btn.disabled { opacity: 0.55; cursor: default; pointer-events: none; }
 .page-btn.active-page {
     background: linear-gradient(90deg, var(--accent), var(--accent-2));
     color: #fff;
@@ -546,4 +573,30 @@ input[type="range"]::-webkit-slider-thumb {
 .note-row input::placeholder { color: var(--text-dim); }
 @media (max-width: 760px) {
     .note-row { grid-template-columns: 1fr; }
+}
+
+/* ===== Weather screen ===== */
+.weather-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 10px;
+}
+.wday {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 14px 8px;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    text-align: center;
+}
+.wday .wd { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; color: var(--text-soft); }
+.wday .wi { font-size: 26px; line-height: 1; filter: drop-shadow(0 3px 8px rgba(0,200,255,0.35)); }
+.wday .wt { font-size: 16px; font-weight: 800; color: var(--accent); }
+.wday .wt small { color: var(--text-dim); font-size: 11px; }
+.wday .wd-desc { font-size: 10.5px; color: var(--text-soft); min-height: 2.4em; }
+@media (max-width: 760px) {
+    .weather-grid { grid-template-columns: repeat(2, 1fr); }
 }

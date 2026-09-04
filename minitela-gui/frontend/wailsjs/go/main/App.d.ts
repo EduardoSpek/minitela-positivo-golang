@@ -11,9 +11,15 @@ export function Disconnect():Promise<void>;
 
 export function GetSystemStats():Promise<Record<string, any>>;
 
+export function GetWeatherConfig():Promise<Record<string, any>>;
+
 export function GoToPage(arg1:number):Promise<void>;
 
 export function IsConnected():Promise<boolean>;
+
+export function RestoreTheme():Promise<void>;
+
+export function RestoreThemeFromPath(arg1:string):Promise<void>;
 
 export function SetAutoStartEnabled(arg1:boolean):Promise<void>;
 
@@ -27,8 +33,16 @@ export function SetPage(arg1:number):Promise<void>;
 
 export function SetSystemDateTime(arg1:string):Promise<void>;
 
+export function SetWeatherConfig(arg1:string):Promise<void>;
+
 export function StartMonitor(arg1:number):Promise<void>;
 
 export function StopMonitor():Promise<void>;
+
+export function UploadGifFile(arg1:Array<number>):Promise<void>;
+
+export function UploadGifFromPath(arg1:string):Promise<void>;
+
+export function UploadImageToTheme(arg1:Array<number>,arg2:number):Promise<void>;
 
 export function WriteText(arg1:string,arg2:number):Promise<void>;

@@ -22,12 +22,24 @@ export function GetSystemStats() {
   return window['go']['main']['App']['GetSystemStats']();
 }
 
+export function GetWeatherConfig() {
+  return window['go']['main']['App']['GetWeatherConfig']();
+}
+
 export function GoToPage(arg1) {
   return window['go']['main']['App']['GoToPage'](arg1);
 }
 
 export function IsConnected() {
   return window['go']['main']['App']['IsConnected']();
+}
+
+export function RestoreTheme() {
+  return window['go']['main']['App']['RestoreTheme']();
+}
+
+export function RestoreThemeFromPath(arg1) {
+  return window['go']['main']['App']['RestoreThemeFromPath'](arg1);
 }
 
 export function SetAutoStartEnabled(arg1) {
@@ -54,12 +66,28 @@ export function SetSystemDateTime(arg1) {
   return window['go']['main']['App']['SetSystemDateTime'](arg1);
 }
 
+export function SetWeatherConfig(arg1) {
+  return window['go']['main']['App']['SetWeatherConfig'](arg1);
+}
+
 export function StartMonitor(arg1) {
   return window['go']['main']['App']['StartMonitor'](arg1);
 }
 
 export function StopMonitor() {
   return window['go']['main']['App']['StopMonitor']();
+}
+
+export function UploadGifFile(arg1) {
+  return window['go']['main']['App']['UploadGifFile'](arg1);
+}
+
+export function UploadGifFromPath(arg1) {
+  return window['go']['main']['App']['UploadGifFromPath'](arg1);
+}
+
+export function UploadImageToTheme(arg1, arg2) {
+  return window['go']['main']['App']['UploadImageToTheme'](arg1, arg2);
 }
 
 export function WriteText(arg1, arg2) {

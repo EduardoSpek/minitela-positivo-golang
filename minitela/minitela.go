@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -13,9 +14,61 @@ type NumTag struct {
 	Value int32
 }
 
-// Client is a high-level handle to the Minitela device.
+// Client is a high-level handle to the Minitela device. All high-level
+// operations are serialized through a single worker goroutine so that
+// concurrent callers (the hidden monitor loop and the page selectors / keyboard
+// hook) never issue overlapping serial I/O. This removes both the data races on
+// the shared read buffer and the cross-caller blocking that froze the device.
 type Client struct {
 	port *Port
+
+	opMu   sync.Mutex
+	closed bool
+	opCh   chan op
+}
+
+// op is a queued serial operation. It runs inside the single worker goroutine.
+type op struct {
+	run  func() error
+	done chan error
+}
+
+func (c *Client) initOps() {
+	c.opCh = make(chan op, 64)
+	go c.opWorker()
+}
+
+func (c *Client) opWorker() {
+	for o := range c.opCh {
+		err := o.run()
+		if o.done != nil {
+			o.done <- err
+		}
+	}
+}
+
+// enqueue submits a closure to the serial worker and waits for its result.
+// It returns an error immediately if the client is closed or if the serial
+// queue is full. Crucially, opMu is NOT held while the operation is enqueued
+// or while waiting for the result: holding it there would block Close and every
+// other caller whenever the worker is busy with a slow serial transaction,
+// which is what froze the COM port while rapidly switching pages.
+func (c *Client) enqueue(run func() error) error {
+	c.opMu.Lock()
+	if c.closed {
+		c.opMu.Unlock()
+		return fmt.Errorf("minitela fechada")
+	}
+	done := make(chan error, 1)
+	o := op{run: run, done: done}
+	select {
+	case c.opCh <- o:
+		c.opMu.Unlock()
+		return <-done
+	default:
+		c.opMu.Unlock()
+		return fmt.Errorf("minitela ocupada (fila de comandos cheia)")
+	}
 }
 
 // Connect opens the Minitela port (auto-detected on Windows) and performs a
@@ -26,6 +79,7 @@ func Connect() (*Client, error) {
 		return nil, err
 	}
 	c := &Client{port: p}
+	c.initOps()
 	return c, nil
 }
 
@@ -35,14 +89,22 @@ func ConnectPort(name string) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Client{port: p}, nil
+	c := &Client{port: p}
+	c.initOps()
+	return c, nil
 }
 
-// Close closes the underlying port.
+// Close closes the underlying port and stops the serial worker.
 func (c *Client) Close() error {
 	if c.port == nil {
 		return nil
 	}
+	c.opMu.Lock()
+	if !c.closed {
+		c.closed = true
+		close(c.opCh)
+	}
+	c.opMu.Unlock()
 	return c.port.Close()
 }
 
@@ -51,16 +113,50 @@ func (c *Client) Port() *Port { return c.port }
 
 // Handshake sends the handshake command and reads the response.
 func (c *Client) Handshake() (uint32, error) {
-	cmd := NewCommand(CommandHandshake, nil, false)
-	resp, err := c.port.SendAndWait(cmd, CommandHandshakeResponse, 2*time.Second)
+	var res uint32
+	var hErr error
+	err := c.enqueue(func() error {
+		cmd := NewCommand(CommandHandshake, nil, false)
+		resp, err := c.port.SendAndWait(cmd, CommandHandshakeResponse, 2*time.Second)
+		if err != nil {
+			return err
+		}
+		_, _, content, _, ok := parseResponse(resp)
+		if !ok || len(content) < 4 {
+			return fmt.Errorf("bad handshake response")
+		}
+		res = binary.BigEndian.Uint32(content)
+		return nil
+	})
 	if err != nil {
 		return 0, err
 	}
-	_, _, content, _, ok := parseResponse(resp)
-	if !ok || len(content) < 4 {
-		return 0, fmt.Errorf("bad handshake response")
+	return res, hErr
+}
+
+// ReSync flushes stale bytes from the serial buffer and re-runs the handshake.
+// This should be called after a burst of timeouts so the device and app fall
+// back in sync without having to physically reconnect the USB cable.
+func (c *Client) ReSync() error {
+	var hErr error
+	err := c.enqueue(func() error {
+		c.port.Flush()
+		cmd := NewCommand(CommandHandshake, nil, false)
+		resp, err := c.port.SendAndWait(cmd, CommandHandshakeResponse, 2*time.Second)
+		if err != nil {
+			return err
+		}
+		_, _, content, _, ok := parseResponse(resp)
+		if !ok || len(content) < 4 {
+			return fmt.Errorf("bad handshake response")
+		}
+		_ = binary.BigEndian.Uint32(content)
+		return nil
+	})
+	if err != nil {
+		return err
 	}
-	return binary.BigEndian.Uint32(content), nil
+	return hErr
 }
 
 // SetBacklight sets the display backlight (0-100).
@@ -155,11 +251,13 @@ func (c *Client) WriteTextWithBrightness(text string, brightness int) error {
 }
 
 // sendSetRegisterRaw sends a SET_REGISTER command with raw content (no
-// length re-wrapping) and waits for the response.
+// length re-wrapping) and waits for the response, via the serial worker.
 func (c *Client) sendSetRegisterRaw(cmdType CommandType, content []byte) error {
-	cmd := NewCommand(cmdType, content, false)
-	_, err := c.port.SendAndWait(cmd, CommandSetRegisterResponse, 2*time.Second)
-	return err
+	return c.enqueue(func() error {
+		cmd := NewCommand(cmdType, content, false)
+		_, err := c.port.SendAndWait(cmd, CommandSetRegisterResponse, 2*time.Second)
+		return err
+	})
 }
 
 // sendSystemNum writes a single numeric system tag.
@@ -202,15 +300,39 @@ func (c *Client) setNumTagsChunk(tags []NumTag) error {
 // SetStringTag writes a single string register (e.g. WiFi SSID, media name,
 // notifications).
 func (c *Client) SetStringTag(regID uint16, value string) error {
-	if !isASCII(value) {
-		return fmt.Errorf("string value must be ASCII")
-	}
-	payload := []byte(value)
+	payload := encodeGB2312(value)
 	content := buildStringContent(regID, payload)
 	return c.sendSetRegisterRaw(CommandSetRegister, content)
 }
 
-// GetNumTags reads one or more numeric registers.
+// encodeGB2312 converts a UTF-8 string to the byte encoding the official app
+// sends to the firmware (StringConverter.convertStrToUint8Array(str,'gb2312')).
+// ASCII passes through unchanged. The degree sign '°' (U+00B0) is emitted as
+// its UTF-8 pair 0xC2 0xB0: testing showed a lone 0xB0 breaks the rest of the
+// string on the panel (only the leading digits render), while UTF-8 renders
+// correctly. Any other non-ASCII byte becomes '?'.
+func encodeGB2312(s string) []byte {
+	var out []byte
+	b := []byte(s)
+	i := 0
+	for i < len(b) {
+		c := b[i]
+		if c <= 0x7F {
+			out = append(out, c)
+			i++
+		} else if c == 0xC2 && i+1 < len(b) && b[i+1] == 0xB0 {
+			// '°' (U+00B0) -> UTF-8 bytes 0xC2 0xB0.
+			out = append(out, 0xC2, 0xB0)
+			i += 2
+		} else {
+			out = append(out, byte('?'))
+			i++
+		}
+	}
+	return out
+}
+
+// GetNumTags reads one or more numeric registers via the serial worker.
 func (c *Client) GetNumTags(regIDs []uint16) (map[uint16]int32, error) {
 	res := map[uint16]int32{}
 	const maxPerPacket = 16
@@ -220,12 +342,20 @@ func (c *Client) GetNumTags(regIDs []uint16) (map[uint16]int32, error) {
 			chunk = chunk[:maxPerPacket]
 		}
 		content := buildNumRequestContent(chunk)
-		cmd := NewCommand(CommandSetRegister, content, false)
-		resp, err := c.port.SendAndWait(cmd, CommandSetRegisterResponse, 2*time.Second)
-		if err != nil {
-			return nil, err
-		}
-		nums, err := decodeNumResponse(resp)
+		var nums map[uint16]int32
+		err := c.enqueue(func() error {
+			cmd := NewCommand(CommandSetRegister, content, false)
+			resp, err := c.port.SendAndWait(cmd, CommandSetRegisterResponse, 2*time.Second)
+			if err != nil {
+				return err
+			}
+			n, err := decodeNumResponse(resp)
+			if err != nil {
+				return err
+			}
+			nums = n
+			return nil
+		})
 		if err != nil {
 			return nil, err
 		}
@@ -237,15 +367,27 @@ func (c *Client) GetNumTags(regIDs []uint16) (map[uint16]int32, error) {
 	return res, nil
 }
 
-// GetStringTag reads a string register.
+// GetStringTag reads a string register via the serial worker.
 func (c *Client) GetStringTag(regID uint16, length uint16) ([]byte, error) {
 	content := buildStringRequestContent(regID, length)
-	cmd := NewCommand(CommandSetRegister, content, false)
-	resp, err := c.port.SendAndWait(cmd, CommandSetRegisterResponse, 2*time.Second)
+	var val []byte
+	err := c.enqueue(func() error {
+		cmd := NewCommand(CommandSetRegister, content, false)
+		resp, err := c.port.SendAndWait(cmd, CommandSetRegisterResponse, 2*time.Second)
+		if err != nil {
+			return err
+		}
+		v, err := decodeStringResponse(resp, regID)
+		if err != nil {
+			return err
+		}
+		val = v
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	return decodeStringResponse(resp, regID)
+	return val, nil
 }
 
 // decodeNumResponse parses a SET_REGISTER_RESPONSE frame into numeric values.

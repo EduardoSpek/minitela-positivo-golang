@@ -31,6 +31,44 @@ const (
 	RegWhatsappLogo uint16 = 2005
 	// RegThemeAnimation controls the theme/layer animation (0/1).
 	RegThemeAnimation uint16 = 65
+
+	// Weather (Clima) page registers. Per-register layout (official theme):
+	// Weather_N_Type = condition glyph index (number), Weather_N_Temp =
+	// temperature as int, Weather_N_Temp_Min/Max = daily min/max ints, and
+	// Weather_N_Temp_Desc = a label string (the official app writes the date).
+	Weather1Type      uint16 = 1110
+	Weather1Temp      uint16 = 1111
+	Weather1TempMin   uint16 = 1112
+	Weather1TempMax   uint16 = 1113
+	Weather1TempDesc  uint16 = 1114
+	Weather2Type      uint16 = 1115
+	Weather2Temp      uint16 = 1116
+	Weather2TempMin   uint16 = 1117
+	Weather2TempMax   uint16 = 1118
+	Weather2TempDesc  uint16 = 1119
+	Weather3Type      uint16 = 1120
+	Weather3Temp      uint16 = 1121
+	Weather3TempMin   uint16 = 1122
+	Weather3TempMax   uint16 = 1123
+	Weather3TempDesc  uint16 = 1124
+	Weather4Type      uint16 = 1125
+	Weather4Temp      uint16 = 1126
+	Weather4TempMin   uint16 = 1127
+	Weather4TempMax   uint16 = 1128
+	Weather4TempDesc  uint16 = 1129
+	Weather5Type      uint16 = 1130
+	Weather5Temp      uint16 = 1131
+	Weather5TempMin   uint16 = 1132
+	Weather5TempMax   uint16 = 1133
+	Weather5TempDesc  uint16 = 1134
+
+	// The Clima page's extra custom registers (see the theme data.json):
+	// city (2027) = location label, currentTemp (2030) = "25°/26°", and
+	// forecastTemp1/2 (2031/2032) = the next two days' temperatures.
+	RegCity          uint16 = 2027
+	RegCurrentTemp   uint16 = 2030
+	RegForecastTemp1 uint16 = 2031
+	RegForecastTemp2 uint16 = 2032
 )
 
 // System tags (per the official app's systemTagNameMap).

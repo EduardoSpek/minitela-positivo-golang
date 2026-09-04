@@ -5,7 +5,9 @@ import {
     SetBacklight, WriteText, SetDateTime,
     StartMonitor, StopMonitor, GetSystemStats,
     GoToPage, SetNotes,
+    GetWeatherConfig, SetWeatherConfig,
     AutoStartEnabled, SetAutoStartEnabled, CreateShortcut,
+    UploadGifFile, UploadGifFromPath, RestoreTheme, UploadImageToTheme,
 } from '../wailsjs/go/main/App';
 import { EventsOn } from '../wailsjs/runtime/runtime';
 
@@ -71,15 +73,15 @@ async function tryConnect() {
     }
 }
 
-// Auto-starts the data loop right after a successful connection so the mini
-// screen keeps updating as soon as the app opens.
+// Auto-starts the hidden data loop right after a successful connection so the
+// mini screen keeps updating as soon as the app opens (sem intervenção do usuário).
 async function startMonitorAuto() {
     if (monitorOn) return;
     try {
-        await StartMonitor(5);
+        // 10s: equilíbrio entre atualização ágil do monitor e não sobrecargar
+        // o firmware; a tela redibuja os íconos de batería/WiFi em cada ciclo.
+        await StartMonitor(10);
         monitorOn = true;
-        $('btnMonitorToggle').textContent = 'Parar';
-        $('monitorHint').textContent = 'Enviando dados para a tela ativa automaticamente.';
         refreshStats();
     } catch (e) {
         /* monitor já em execução ou sem dispositivo: ignora */
@@ -145,28 +147,6 @@ $('btnSendDate').addEventListener('click', async () => {
 });
 
 // ---- monitor ----
-$('btnMonitorToggle').addEventListener('click', async () => {
-    if (monitorOn) {
-        StopMonitor();
-        monitorOn = false;
-        $('btnMonitorToggle').textContent = 'Iniciar';
-        $('monitorHint').textContent = 'Monitor parado.';
-        toast('Envio de dados parado');
-        return;
-    }
-    if (!connected) { tryConnect(); }
-    try {
-        await StartMonitor(5);
-        monitorOn = true;
-        $('btnMonitorToggle').textContent = 'Parar';
-        $('monitorHint').textContent = 'Monitorando... os dados aparecem na tela ativa.';
-        toast('Envio de dados iniciado');
-        await refreshStats();
-    } catch (e) {
-        toast('Falha ao iniciar: ' + String(e), 'err');
-    }
-});
-
 async function refreshStats() {
     try {
         const g = await GetSystemStats();
@@ -190,26 +170,13 @@ EventsOn('stats', (g) => {
 
 // Page id (register 2 value / pageId) -> screen. Confirmed on hardware: the
 // physical key cycles WhatsApp=1, Notas=2, Monitor=3, Clima=4, Imagem=5.
-const PAGE_SCREENS = {
-    1: 'screen',   // whatsapp (adiado para depois)
-    2: 'notes',    // notas
-    3: 'monitor',  // estatísticas
-    4: 'screen',   // clima
-    5: 'screen',   // imagem
-};
-
 EventsOn('page', (p) => {
     if (p === undefined) return;
-    // Highlight the matching page selector.
+    // Apenas destaca o botão correspondente no seletor de telas. Não mexe na
+    // navegação do app: o usuário continua na aba que escolheu.
     document.querySelectorAll('[data-page]').forEach((b) => {
         b.classList.toggle('active-page', Number(b.dataset.page) === Number(p));
     });
-    const target = PAGE_SCREENS[Number(p)];
-    if (!target) return;
-    document.querySelectorAll('.nav-item').forEach((b) => b.classList.remove('active'));
-    document.querySelectorAll('.view').forEach((v) => v.classList.remove('active'));
-    document.querySelector(`.nav-item[data-view="${target}"]`)?.classList.add('active');
-    document.querySelector(`#view-${target}`)?.classList.add('active');
 });
 
 // ---- settings ----
@@ -241,22 +208,30 @@ $('swConnect').addEventListener('click', () => {
     } else {
         StopMonitor();
         monitorOn = false;
-        $('btnMonitorToggle').textContent = 'Iniciar';
         Disconnect().then(() => setConn(false));
     }
 });
 
-// ---- page selectors (alternar entre as 5 telas da minitela) ----
-const PAGE_NAMES = ['WhatsApp', 'Notas', 'Monitor', 'Clima', 'Imagem'];
+// ---- page selectors (alternar entre as telas da minitela) ----
+// Hardware pages are fixed (1=WhatsApp, 2=Notas, 3=Monitor, 4=Clima, 5=Imagem)
+// but WhatsApp is disabled, so only pages 2-5 are selectable.
+const PAGE_NAMES = { 2: 'Notas', 3: 'Monitor', 4: 'Clima', 5: 'Imagem' };
+let pageBusy = false;
 function bindPageSelectors() {
     document.querySelectorAll('[data-page]').forEach((btn) => {
         btn.addEventListener('click', async () => {
-            if (!connected) { tryConnect(); }
+            if (pageBusy) return; // drop rapid clicks while a switch is in flight
+            pageBusy = true;
+            btn.classList.add('disabled');
             try {
+                if (!connected) { tryConnect(); }
                 await GoToPage(Number(btn.dataset.page));
-                toast('Tela alterada para ' + PAGE_NAMES[Number(btn.dataset.page) - 1]);
+                toast('Tela alterada para ' + PAGE_NAMES[Number(btn.dataset.page)]);
             } catch (e) {
                 toast('Falha ao trocar de tela: ' + String(e), 'err');
+            } finally {
+                pageBusy = false;
+                btn.classList.remove('disabled');
             }
         });
     });
@@ -290,6 +265,128 @@ $('btnShortcut').addEventListener('click', async () => {
     }
 });
 
+// ---- clima ----
+const WEATHER_ICONS = ['☀', '⛅', '☁', '🌧', '☾', '☾⛅', '❄', '·'];
+function renderWeather(d) {
+    const grid = $('weatherGrid');
+    if (!d || !d.days || !d.days.length) {
+        grid.innerHTML = '<div class="empty-hint" id="weatherEmpty">Sem dados ainda.</div>';
+        $('weatherPlace').textContent = d && d.placeName ? d.placeName : '';
+        return;
+    }
+    if (d.placeName) $('weatherPlace').textContent = '· ' + d.placeName;
+    const empty = $('weatherEmpty');
+    if (empty) empty.remove();
+    const hint = $('weatherHint');
+    if (hint) hint.style.display = 'none';
+    grid.innerHTML = d.days.map((day) => {
+        const ic = WEATHER_ICONS[Math.max(0, Math.min(7, Number(day.icon)))];
+        return `<div class="wday">
+            <div class="wd">${day.weekday}</div>
+            <div class="wi">${ic}</div>
+            <div class="wt">${Math.round(day.tempMax)}°<small>/${Math.round(day.tempMin)}°</small></div>
+            <div class="wd-desc">${day.condition}</div>
+        </div>`;
+    }).join('');
+}
+
+async function refreshWeatherView() {
+    try {
+        const cfg = await GetWeatherConfig();
+        $('weatherCity').value = cfg.city || '';
+        if (cfg.placeName) $('weatherPlace').textContent = '· ' + cfg.placeName;
+    } catch (e) { /* ignore */ }
+}
+
+$('btnSaveWeather').addEventListener('click', async () => {
+    const city = $('weatherCity').value.trim();
+    if (!city) { toast('Informe o nome da cidade', 'err'); return; }
+    if (!connected) { tryConnect(); }
+    const btn = $('btnSaveWeather');
+    btn.classList.add('disabled');
+    try {
+        await SetWeatherConfig(city);
+        toast('Clima atualizado para: ' + city);
+    } catch (e) {
+        toast('Falha ao atualizar o clima: ' + String(e), 'err');
+    } finally {
+        btn.classList.remove('disabled');
+    }
+});
+
+EventsOn('weather', (d) => renderWeather(d));
+
+// ---- imagem ----
+$('btnRestoreTheme').addEventListener('click', async () => {
+    if (!connected) { tryConnect(); }
+    const btn = $('btnRestoreTheme');
+    btn.classList.add('disabled');
+    $('imageStatus').textContent = 'Enviando tema de teste (OTA)...';
+    try {
+        await RestoreTheme();
+        $('imageStatus').textContent = 'Tema re-enviado com éxito (OTA completo).';
+        toast('Tema re-enviado (test OTA)');
+    } catch (e) {
+        $('imageStatus').textContent = 'Erro: ' + String(e);
+        toast('Falha no envio OTA: ' + String(e), 'err');
+    } finally {
+        btn.classList.remove('disabled');
+    }
+});
+
+$('btnUploadImage').addEventListener('click', async () => {
+    const file = $('imageFile').files && $('imageFile').files[0];
+    if (!file) { toast('Escolha um arquivo primeiro', 'err'); return; }
+    const page = imagePage;
+    if (!page) { toast('Escolha a página de imagem', 'err'); return; }
+    if (!connected) { tryConnect(); }
+    const btn = $('btnUploadImage');
+    btn.classList.add('disabled');
+    $('imageStatus').textContent = `Convertendo e enviando à página Imagem ${page}...`;
+    try {
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        await UploadImageToTheme(Array.from(bytes), page);
+        $('imageStatus').textContent = `Imagem aplicada à página Imagem ${page} (tema re-gerado).`;
+        toast('Imagem aplicada ao tema');
+    } catch (e) {
+        $('imageStatus').textContent = 'Erro: ' + String(e);
+        toast('Falha no envio: ' + String(e), 'err');
+    } finally {
+        btn.classList.remove('disabled');
+    }
+});
+
+$('btnSendTestGif') &&
+    $('btnSendTestGif').addEventListener('click', async () => {
+        if (!connected) { tryConnect(); }
+        const btn = $('btnSendTestGif');
+        btn.classList.add('disabled');
+        $('imageStatus').textContent = 'Enviando GIF de teste (raw 192x192)...';
+        try {
+            const testPath = 'C:\\Users\\spekv\\minitela-go\\test_gif.gif';
+            await UploadGifFromPath(testPath);
+            $('imageStatus').textContent = 'GIF de teste enviado (raw). Verifique a página Imagem.';
+            toast('GIF de teste enviado');
+        } catch (e) {
+            $('imageStatus').textContent = 'Erro: ' + String(e);
+            toast('Falha: ' + String(e), 'err');
+        } finally {
+            btn.classList.remove('disabled');
+        }
+    });
+
+const imagePageSeg = $('imagePageSeg');
+let imagePage = 1;
+if (imagePageSeg) {
+    imagePageSeg.addEventListener('click', (e) => {
+        const btn = e.target.closest('.seg-btn');
+        if (!btn) return;
+        imagePageSeg.querySelectorAll('.seg-btn').forEach((b) => b.classList.remove('is-active'));
+        btn.classList.add('is-active');
+        imagePage = parseInt(btn.dataset.page, 10) || 1;
+    });
+}
+
 // ---- init ----
 async function loadAutoStartState() {
     try {
@@ -304,5 +401,6 @@ async function loadAutoStartState() {
     setPreview('Minitela Go');
     loadAutoStartState();
     bindPageSelectors();
+    refreshWeatherView();
     tryConnect();
 })();

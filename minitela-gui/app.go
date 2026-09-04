@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -19,9 +20,8 @@ import (
 
 // Firmware page identifiers (pageId written to register 2). Confirmed
 // empirically: the physical key cycles WhatsApp, Notas, Monitor, Clima,
-// Imagem = pageId 1-5.
+// Imagem = pageId 1-5. WhatsApp (1) is disabled/excluded from the cycle.
 const (
-	PageWhatsApp = int32(1)
 	PageNotas    = int32(2)
 	PageMonitor  = int32(3)
 	PageClima    = int32(4)
@@ -44,6 +44,10 @@ type App struct {
 	// notes state (Reminder 1/2/3) for the Notas screen
 	notesMu sync.Mutex
 	notes   [3]note
+
+	// weather state for the Clima screen
+	weatherMu   sync.Mutex
+	weatherLast []DayForecast
 }
 
 // note holds the text+time for a single reminder on the Notas screen.
@@ -189,7 +193,8 @@ func (a *App) SetPage(page int) error {
 	return c.SetPage(int32(page))
 }
 
-// nextPage advances the mini screen to the next page (1->2->3->4->5->1).
+// nextPage advances the mini screen to the next page, skipping the disabled
+// WhatsApp page: Notas(2)->Monitor(3)->Clima(4)->Imagem(5)->Notas(2).
 // Called by the global keyboard hook when the dedicated notebook key is pressed.
 func (a *App) nextPage() {
 	c, err := a.get()
@@ -197,31 +202,43 @@ func (a *App) nextPage() {
 		return
 	}
 	cur, err := a.currentPage()
-	if err != nil || cur < 1 || cur > 5 {
+	if err != nil {
 		cur = 0
+	}
+	if cur < PageNotas || cur > PageImagem {
+		cur = PageNotas - 1
 	}
 	next := cur + 1
 	if next > PageImagem {
-		next = PageWhatsApp
+		next = PageNotas
 	}
 	_ = c.SetPage(next)
 }
 
-// GoToPage switches the mini screen to a specific page (1-5).
+// GoToPage switches the mini screen to a specific page (2-5). Page 1
+// (WhatsApp) is disabled.
 func (a *App) GoToPage(page int) error {
-	if page < int(PageWhatsApp) || page > int(PageImagem) {
+	if page < int(PageNotas) || page > int(PageImagem) {
 		return fmt.Errorf("página inválida: %d", page)
 	}
 	return a.SetPage(page)
 }
 
-// SetNotes stores the three reminders (text + time) for the Notas screen.
+// SetNotes stores the three reminders (text + time) for the Notas screen and
+// pushes them straight to the device so the Notas page updates immediately,
+// without waiting for the next monitor cycle or page detection.
 func (a *App) SetNotes(n1, t1, n2, t2, n3, t3 string) error {
 	a.notesMu.Lock()
-	defer a.notesMu.Unlock()
 	a.notes[0] = note{Text: n1, Time: t1}
 	a.notes[1] = note{Text: n2, Time: t2}
 	a.notes[2] = note{Text: n3, Time: t3}
+	a.notesMu.Unlock()
+
+	if c, err := a.get(); err == nil {
+		if perr := pushNotesTags(c, a); perr != nil {
+			runtimeEmit(a.ctx, "monitor-error", "notas: "+perr.Error())
+		}
+	}
 	return nil
 }
 
@@ -254,20 +271,28 @@ func (a *App) StartMonitor(intervalSeconds int) error {
 	a.monitorMu.Unlock()
 
 	go func() {
-		// Feed once right away, then keep refreshing on the ticker.
-		feedOnce := func() {
+		// feedOnce pushes stats/notes/weather to the device. It returns false if
+		// the serial link failed (timeouts), so the loop can back off and resync.
+		feedOnce := func() bool {
 			g := gatherSystemInfo()
 			runtimeEmit(a.ctx, "stats", g.toMap())
 			c, err := a.get()
 			if err != nil {
-				return
+				return false
 			}
 			now := time.Now()
+			// The monitor page's top-bar clock is bound to string register 2006
+			// (e.g. "28/10 14:00"), updated on every screen.
+			dh := fmt.Sprintf("%02d/%02d %02d:%02d", now.Day(), int(now.Month()), now.Hour(), now.Minute())
 			// Keep the firmware clock ticking on every screen (RTC registers 4/5).
 			if terr := c.SetDateTime(now); terr != nil {
 				runtimeEmit(a.ctx, "monitor-error", "relógio: "+terr.Error())
+				return false
 			}
-			// Detect the active page and only send the data that screen shows.
+			// Detect the active page. If detection fails (e.g. right after the
+			// device reboots from an OTA) fall back to Monitor so the top bar
+			// still updates; the per-page fields below resync once the page is
+			// read reliably again.
 			pg, _ := a.currentPage()
 			if pg < 1 || pg > 5 {
 				pg = PageMonitor
@@ -276,33 +301,70 @@ func (a *App) StartMonitor(intervalSeconds int) error {
 				lastPage.Store(pg)
 				runtimeEmit(a.ctx, "page", pg)
 			}
+			// Monitor data + top-bar clock are unconditional (cheap, needed on
+			// every screen). Clima and Notas are only serialized for their own
+			// pages, keeping the serial bus load low so the firmware responds.
+			if err := pushSystemTags(c, g); err != nil {
+				runtimeEmit(a.ctx, "monitor-error", err.Error())
+				return false
+			}
 			switch pg {
-			case PageMonitor:
-				// The monitor page's top-bar clock is bound to the custom
-				// string register 2006 (dateHour), not the system 4/5 clock.
-				dh := fmt.Sprintf("%02d/%02d %02d:%02d", now.Day(), int(now.Month()), now.Hour(), now.Minute())
-				if serr := c.SetStringTag(minitela.RegDateHour, dh); serr != nil {
-					runtimeEmit(a.ctx, "monitor-error", "data/hora: "+serr.Error())
-				}
-				if err := pushSystemTags(c, g); err != nil {
-					runtimeEmit(a.ctx, "monitor-error", err.Error())
-				}
 			case PageNotas:
 				if err := pushNotesTags(c, a); err != nil {
 					runtimeEmit(a.ctx, "monitor-error", "notas: "+err.Error())
+					return false
+				}
+			case PageClima:
+				if err := pushWeatherTags(c, a); err != nil {
+					runtimeEmit(a.ctx, "monitor-error", "clima: "+err.Error())
+					return false
 				}
 			}
+			// The monitor page's top-bar clock is bound to string register 2006.
+			if serr := c.SetStringTag(minitela.RegDateHour, dh); serr != nil {
+				runtimeEmit(a.ctx, "monitor-error", "data/hora: "+serr.Error())
+				return false
+			}
+			return true
 		}
-		feedOnce()
-		ticker := time.NewTicker(time.Duration(intervalSeconds) * time.Second)
-		defer ticker.Stop()
+
+		// Start right away, then refresh on a ticker that backs off while the
+		// device is unresponsive (so we stop hammering it and let it recover),
+		// and triggers a serial resync after a short burst of failures.
+		const (
+			minInt = 10 * time.Second
+			maxInt = 30 * time.Second
+		)
+		sleep := minInt
+		consecFail := 0
 		for {
 			select {
 			case <-stop:
 				return
-			case <-ticker.C:
-				feedOnce()
+			case <-time.After(sleep):
 			}
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			ok := feedOnce()
+			if ok {
+				consecFail = 0
+				sleep = minInt
+				continue
+			}
+			consecFail++
+			if consecFail%3 == 0 {
+				// A few failures in a row: drop stale bytes and re-handshake so
+				// the app and device fall back in sync without a cable pull.
+				if c, cerr := a.get(); cerr == nil {
+					if rerr := c.ReSync(); rerr == nil {
+						runtimeEmit(a.ctx, "monitor-error", "serial re-sincronizado")
+					}
+				}
+			}
+			sleep = maxInt
 		}
 	}()
 	return nil
@@ -349,7 +411,10 @@ func pushSystemTags(c *minitela.Client, g systemInfo) error {
 		{ID: minitela.RegCPUUsage, Value: int32(cpu)},
 		{ID: minitela.RegGPUUsage, Value: 0},
 		{ID: minitela.RegWifiQuality, Value: int32(quality)},
-		{ID: minitela.RegBatteryType, Value: int32(batteryType(bat))},
+	}
+	if g.Battery != "" && g.Battery != "-" {
+		// Battery_Type (1150) drives the icon. Use the official app's 0-5 scale.
+		nums = append(nums, minitela.NumTag{ID: minitela.RegBatteryType, Value: int32(batteryType(bat))})
 	}
 	if g.WifiSSID != "" && g.WifiSSID != "-" {
 		nums = append(nums, minitela.NumTag{ID: minitela.RegWifiStatus, Value: 1})
@@ -365,9 +430,9 @@ func pushSystemTags(c *minitela.Client, g systemInfo) error {
 	if err := c.SetNumTags(nums); err != nil {
 		return err
 	}
-	// Battery_Percent (1082) is a STRING register (valueType:1) in this theme,
-	// so it must be written via SetStringTag, not SetNumTags. Include the "%"
-	// symbol because the firmware does not add it automatically.
+	// Battery_Percent (1082) is rendered by the theme's MyTextInput widget; in
+	// the stock theme it must be written as a STRING (with the "%" suffix) for
+	// the number to show, even though data.json marks it numeric.
 	if g.Battery != "" && g.Battery != "-" {
 		if err := c.SetStringTag(minitela.RegBatteryPercent, truncateASCII(g.Battery+"%", 8)); err != nil {
 			return err
@@ -426,6 +491,110 @@ func truncateASCII(s string, n int) string {
 	return s[:n]
 }
 
+// pushWeatherTags writes the Clima screen registers for all five forecast days
+// (Weather_N_Type / Temp / Temp_Min / Temp_Max / Temp_Desc, 1110-1134) plus the
+// page's custom city, currentTemp and forecastTemp registers (2027, 2030-2032).
+// When no forecast has been fetched yet it tries to (re)load it once.
+func pushWeatherTags(c *minitela.Client, a *App) error {
+	days, cfg, err := a.ensureWeather()
+	if err != nil || len(days) == 0 {
+		// No internet or no city configured: render a friendly offline state.
+		return nil
+	}
+	// Condition glyph + numeric temperature registers. Register layout is
+	// contiguous: day N starts at WeatherNType + ((N-1) * 5).
+	typeRegs := []uint16{
+		minitela.Weather1Type, minitela.Weather2Type, minitela.Weather3Type,
+		minitela.Weather4Type, minitela.Weather5Type,
+	}
+	nums := make([]minitela.NumTag, 0, len(days)*3)
+	var desc []struct {
+		id  uint16
+		val string
+	}
+	for i, d := range days {
+		if i >= len(typeRegs) {
+			break
+		}
+		nums = append(nums,
+			minitela.NumTag{ID: typeRegs[i], Value: int32(wmoToIcon(d.WMO, d.IsDay))},
+			minitela.NumTag{ID: typeRegs[i] + 1, Value: int32(d.Temp)},
+			minitela.NumTag{ID: typeRegs[i] + 3, Value: int32(d.TempMax)},
+			minitela.NumTag{ID: typeRegs[i] + 2, Value: int32(d.TempMin)},
+		)
+		// Weather_N_Temp_Desc registers hold the date label "DD/MM".
+		desc = append(desc, struct {
+			id  uint16
+			val string
+		}{typeRegs[i] + 4, dateLabel(d.Date)})
+	}
+	if err := c.SetNumTags(nums); err != nil {
+		return err
+	}
+	display := cfg.PlaceName
+	if display == "" {
+		display = cfg.City
+	}
+	if err := c.SetStringTag(minitela.RegCity, truncateASCII(display, 32)); err != nil {
+		return err
+	}
+	// currentTemp shows today's range as "min°/max°".
+	if len(days) > 0 {
+		d0 := days[0]
+		cur := fmt.Sprintf("%d°/%d°", d0.TempMin, d0.TempMax)
+		if err := c.SetStringTag(minitela.RegCurrentTemp, cur); err != nil {
+			return err
+		}
+		// forecastTemp1/2 show the following two days as "min°/max°", matching
+		// the theme's placeholder text ("25°/25°").
+		for i := 1; i <= 2 && i < len(days); i++ {
+			id := minitela.RegForecastTemp1
+			if i == 2 {
+				id = minitela.RegForecastTemp2
+			}
+			lab := fmt.Sprintf("%d°/%d°", days[i].TempMin, days[i].TempMax)
+			if err := c.SetStringTag(id, lab); err != nil {
+				return err
+			}
+		}
+	}
+	for _, s := range desc {
+		if err := c.SetStringTag(s.id, s.val); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ensureWeather returns the most recent forecast plus the saved config,
+// triggering a refresh when the cache is empty.
+func (a *App) ensureWeather() ([]DayForecast, weatherConfig, error) {
+	cfg := loadWeatherConfig()
+	a.weatherMu.Lock()
+	days := a.weatherLast
+	a.weatherMu.Unlock()
+	if len(days) > 0 {
+		return days, cfg, nil
+	}
+	if cfg.Lat == 0 && cfg.Lon == 0 {
+		return nil, cfg, nil
+	}
+	a.refreshWeather(cfg)
+	a.weatherMu.Lock()
+	days = a.weatherLast
+	a.weatherMu.Unlock()
+	return days, cfg, nil
+}
+
+// dateLabel renders an ISO date as the theme's day/month label shown under each
+// forecast, e.g. "04/09". Falls back to the raw string if it cannot be parsed.
+func dateLabel(iso string) string {
+	if len(iso) >= 10 {
+		return iso[8:10] + "/" + iso[5:7]
+	}
+	return iso
+}
+
 // parseIntSafe converts a numeric string to int, returning 0 on failure.
 func parseIntSafe(s string) int {
 	if s == "" || s == "-" {
@@ -453,22 +622,21 @@ func wifiQuality(signal int) int {
 	}
 }
 
-// batteryType buckets a percentage into the firmware's scale (0-5) matching
-// the official app: <20->0, <40->1, <60->2, <80->3, <100->4, 100->5.
+// batteryType buckets a percentage into the theme's BatteryStatus slide (1150).
+// The theme's MySlide only has 4 slices (BAT_0..BAT_3, indices 0-3), so even a
+// fully charged battery must map to 3. Writing 5 (the old 0-5 scale copied from
+// tagUtils) pointed past the last slice and made the firmware render nothing,
+// which is why the battery icon disappeared at high percentages.
 func batteryType(pct int) int {
 	switch {
-	case pct < 20:
+	case pct < 25:
 		return 0
-	case pct < 40:
+	case pct < 50:
 		return 1
-	case pct < 60:
+	case pct < 75:
 		return 2
-	case pct < 80:
-		return 3
-	case pct < 100:
-		return 4
 	default:
-		return 5
+		return 3
 	}
 }
 
@@ -563,4 +731,168 @@ func (s *systemInfo) toMap() map[string]interface{} {
 		"btName":   s.BTName,
 		"btConn":   s.BTConnected,
 	}
+}
+
+// UploadGifFile flashes a pre-built .acf (from a user-selected image) onto the
+// Imagem page (texture_gif). progress, when non-nil, receives a 0-100 integer.
+func (a *App) UploadGifFile(fileBytes []byte) error {
+	c, err := a.get()
+	if err != nil {
+		return err
+	}
+	if len(fileBytes) == 0 {
+		return fmt.Errorf("arquivo vazio")
+	}
+	return c.UploadFile(fileBytes, minitela.FileTypeTextureGif, nil)
+}
+
+// UploadGifFromPath reads an .acf file from disk and flashes it to the Imagem
+// page. Used by the frontend after the user picks a compiled image.
+func (a *App) UploadGifFromPath(path string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("ler %s: %w", path, err)
+	}
+	return a.UploadGifFile(data)
+}
+
+// RestoreThemeFromPath flashes a full theme blob to the master texture address
+// (FileTypeTexture). Used to validate the OTA pipeline / recover the stock
+// theme, which is low-risk because it rewrites the very theme already installed.
+func (a *App) RestoreThemeFromPath(path string) error {
+	c, err := a.get()
+	if err != nil {
+		return err
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("ler %s: %w", path, err)
+	}
+	if len(data) == 0 {
+		return fmt.Errorf("arquivo vazio")
+	}
+	return c.UploadFile(data, minitela.FileTypeTexture, nil)
+}
+
+// RestoreTheme locates the installed stock theme blob (Texture.acf inside the
+// Positivo MiniTela WindowsApp) and re-flashes it to FileTypeTexture. This
+// exercises the full OTA download pipeline with zero semantic risk: it writes
+// the very same theme the device already runs.
+func (a *App) RestoreTheme() error {
+	path, err := findStockThemeAcf()
+	if err != nil {
+		return err
+	}
+	return a.RestoreThemeFromPath(path)
+}
+
+// UploadImageToTheme converts the provided image bytes to a 192x192 GIF,
+// embeds it into the theme's GIF for the chosen Imagem page, regenerates the
+// stock theme with the official generator exe, and flashes the resulting
+// Texture.acf to the master texture address (FileTypeTexture). imagePage is
+// 1..3 (the Imagem page slots on the device).
+func (a *App) UploadImageToTheme(fileBytes []byte, imagePage int) error {
+	gif := gifByPage(imagePage)
+	if gif == nil {
+		return fmt.Errorf("página de imagem inválida: %d (use 1..3)", imagePage)
+	}
+	c, err := a.get()
+	if err != nil {
+		return err
+	}
+	if len(fileBytes) == 0 {
+		return fmt.Errorf("arquivo vazio")
+	}
+
+	work, err := prepareWorkArea()
+	if err != nil {
+		return err
+	}
+	python, err := findPython()
+	if err != nil {
+		return err
+	}
+	gifPath := filepath.Join(work, "imagem_tmp.gif")
+	if err := convertImageToGif(fileBytes, gifPath, python); err != nil {
+		return err
+	}
+	defer os.Remove(gifPath)
+
+	zipPath, err := embedGifInZip(work, python, gif.Name, gifPath)
+	if err != nil {
+		return err
+	}
+	defer os.Remove(zipPath)
+
+	acf, err := generateThemeAcf(work, zipPath)
+	if err != nil {
+		return err
+	}
+	if err := c.UploadFile(acf, minitela.FileTypeTexture, nil); err != nil {
+		return fmt.Errorf("upload do tema: %w", err)
+	}
+	return nil
+}
+
+// gifByPage returns the theme GIF descriptor for an Imagem page (1..3).
+func gifByPage(page int) *GifFile {
+	for i := range themeGifs {
+		if themeGifs[i].PageNum == page {
+			return &themeGifs[i]
+		}
+	}
+	return nil
+}
+
+// findPython locates a usable python interpreter with Pillow on the system.
+func findPython() (string, error) {
+	candidates := []string{}
+	for _, name := range []string{"python", "py"} {
+		if p, err := exec.LookPath(name); err == nil {
+			candidates = append(candidates, p)
+		}
+	}
+	if base := os.Getenv("LOCALAPPDATA"); base != "" {
+		candidates = append(candidates,
+			filepath.Join(base, "Programs", "Python", "Python311", "python.exe"),
+			filepath.Join(base, "Programs", "Python", "Python310", "python.exe"),
+			filepath.Join(base, "Programs", "Python", "Python39", "python.exe"),
+		)
+	}
+	candidates = append(candidates, `C:\Python311\python.exe`, `C:\Python310\python.exe`)
+	seen := map[string]bool{}
+	for _, p := range candidates {
+		if seen[p] {
+			continue
+		}
+		seen[p] = true
+		if _, err := executeCheck(p); err == nil {
+			return p, nil
+		}
+	}
+	return "", fmt.Errorf("Python com Pillow não encontrado (necessário para converter imagens)")
+}
+
+// executeCheck confirms a python binary actually runs.
+func executeCheck(python string) (string, error) {
+	cmd := exec.Command(python, "-c", "import PIL")
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
+// findStockThemeAcf returns the path to the stock theme blob inside the
+// Positivo MiniTela install folder (checked against the known candidates).
+func findStockThemeAcf() (string, error) {
+	base := "C:\\Program Files\\WindowsApps\\PositivoInformticaS.A.PositivoMinitela_1.0.43.0_x64__6yhrh9dmgepzj\\MiniTelaApp\\assets\\minipanel\\resources\\IDE_utils_pt"
+	candidates := []string{
+		base + "\\ACF\\ConfigData&Texture.acf",
+		base + "\\ACF\\Texture.acf",
+		base + "\\ACF\\acfV1.0.15.acf",
+	}
+	for _, p := range candidates {
+		if _, err := os.Stat(p); err == nil {
+			return p, nil
+		}
+	}
+	return "", fmt.Errorf("não foi possível localizar o .acf de tema na instalação")
 }

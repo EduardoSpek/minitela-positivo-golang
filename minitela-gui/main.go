@@ -16,16 +16,17 @@ import (
 //go:embed all:frontend/dist
 var assets embed.FS
 
-// trayIconPath is set at init and used by the tray to load its icon.
+// trayIconPath points to a .ico file (the system tray on Windows requires an
+// ICO, not PNG).
 var trayIconPath string
 
-// appIconPath refers to the generated PNG icon (for shortcut).
+// appIconPath refers to the generated PNG icon (for desktop shortcut).
 var appIconPath string
 
 func init() {
 	exe, _ := os.Executable()
 	dir := filepath.Dir(exe)
-	trayIconPath = filepath.Join(dir, "appicon.png")
+	trayIconPath = filepath.Join(dir, "icon.ico")
 	appIconPath = filepath.Join(dir, "appicon.png")
 }
 
@@ -42,7 +43,7 @@ func main() {
 			}
 		},
 		StartMonitor: func() {
-			if err := app.StartMonitor(5); err != nil {
+			if err := app.StartMonitor(10); err != nil {
 				log.Printf("monitor: %v", err)
 			}
 		},
@@ -73,7 +74,7 @@ func main() {
 		Height:            720,
 		MinWidth:          860,
 		MinHeight:         600,
-		StartHidden:       startMinimized(),
+		StartHidden:       true,
 		HideWindowOnClose: true,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
@@ -92,14 +93,3 @@ func main() {
 
 // helpers referenced to keep os/context imports wired
 var _ = context.Background
-
-// startMinimized reports whether the app was launched with -minimized
-// (used by the "start with Windows" auto-start entry).
-func startMinimized() bool {
-	for _, a := range os.Args[1:] {
-		if a == "-minimized" {
-			return true
-		}
-	}
-	return false
-}

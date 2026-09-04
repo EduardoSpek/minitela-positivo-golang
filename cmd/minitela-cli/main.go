@@ -33,6 +33,10 @@ func main() {
 		cmdPage(args)
 	case "get":
 		cmdGet(args)
+	case "setnum":
+		cmdSetNum(args)
+	case "setstr":
+		cmdSetStr(args)
 	case "handshake", "ping":
 		cmdHandshake(args)
 	case "help", "-h", "--help":
@@ -177,6 +181,46 @@ func cmdGet(args []string) {
 		os.Exit(1)
 	}
 	fmt.Printf("registro %d = %d\n", id, res[uint16(id)])
+}
+
+func cmdSetNum(args []string) {
+	if len(args) < 2 {
+		fmt.Fprintln(os.Stderr, "uso: minitela setnum <reg> <valor>")
+		os.Exit(1)
+	}
+	id, err1 := strconv.Atoi(args[0])
+	val, err2 := strconv.Atoi(args[1])
+	if err1 != nil || err2 != nil {
+		fmt.Fprintln(os.Stderr, "reg e valor devem ser inteiros")
+		os.Exit(1)
+	}
+	c := connect()
+	defer c.Close()
+	if err := c.SetNumTag(uint16(id), int32(val)); err != nil {
+		fmt.Fprintf(os.Stderr, "erro: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("registro %d = %d (numerico)\n", id, val)
+}
+
+func cmdSetStr(args []string) {
+	if len(args) < 2 {
+		fmt.Fprintln(os.Stderr, "uso: minitela setstr <reg> <texto>")
+		os.Exit(1)
+	}
+	id, err := strconv.Atoi(args[0])
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "reg deve ser inteiro")
+		os.Exit(1)
+	}
+	text := strings.Join(args[1:], " ")
+	c := connect()
+	defer c.Close()
+	if err := c.SetStringTag(uint16(id), text); err != nil {
+		fmt.Fprintf(os.Stderr, "erro: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("registro %d = %q (string)\n", id, text)
 }
 
 func cmdHandshake(args []string) {

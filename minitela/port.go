@@ -54,14 +54,20 @@ func (p *Port) Send(cmd *Command) error {
 }
 
 // SendAndWait writes a command and waits for the expected response type.
-// It returns the raw response frame.
+// It returns the raw response frame. The whole write+read transaction holds
+// p.mu so that concurrent callers (the monitor loop and the keyboard hook)
+// never interleave on the shared readBuf, which previously caused data races
+// that froze the serial link with the device.
 func (p *Port) SendAndWait(cmd *Command, expected CommandType, timeout time.Duration) ([]byte, error) {
-	if err := p.Send(cmd); err != nil {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if _, err := p.port.Write(cmd.Bytes()); err != nil {
 		return nil, err
 	}
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		frame, left, err := p.readFrame()
+		frame, _, err := p.readFrameLocked()
 		if err != nil {
 			return nil, err
 		}
@@ -79,14 +85,14 @@ func (p *Port) SendAndWait(cmd *Command, expected CommandType, timeout time.Dura
 		if cmdType == expected {
 			return frame, nil
 		}
-		_ = left
 	}
 	return nil, fmt.Errorf("timeout waiting for response %#04x", expected)
 }
 
-// readFrame reads available bytes and tries to extract one complete frame.
+// readFrameLocked reads available bytes and tries to extract one complete
+// frame. It MUST be called with p.mu held (i.e. only from SendAndWait).
 // It returns (nil, bufferedBytesRemaining, nil) if not enough data yet.
-func (p *Port) readFrame() ([]byte, []byte, error) {
+func (p *Port) readFrameLocked() ([]byte, []byte, error) {
 	p.port.SetReadTimeout(readTimeout)
 	buf := make([]byte, 4096)
 	n, err := p.port.Read(buf)
@@ -145,4 +151,22 @@ func indexOf(b, sub []byte) int {
 // Close closes the serial port.
 func (p *Port) Close() error {
 	return p.port.Close()
+}
+
+// Flush discards any buffered bytes still waiting to be parsed. Calling this
+// before the next transaction re-syncs the frame parser when the device has
+// become desynchronized (e.g. after a reboot or a partial response).
+func (p *Port) Flush() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	// Drain whatever the OS has buffered without blocking on a full timeout.
+	for {
+		buf := make([]byte, 4096)
+		p.port.SetReadTimeout(25 * time.Millisecond)
+		n, _ := p.port.Read(buf)
+		if n <= 0 {
+			break
+		}
+	}
+	p.readBuf = nil
 }
