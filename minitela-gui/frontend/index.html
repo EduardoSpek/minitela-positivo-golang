@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>Minitela Go</title>
+</head>
+<body>
+<div id="app">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+        <div class="brand">
+            <div class="brand-logo">
+                <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="2" y="3" width="20" height="14" rx="2"/>
+                    <line x1="8" y1="21" x2="16" y2="21"/>
+                    <line x1="12" y1="17" x2="12" y2="21"/>
+                    <path d="M6 8h4M6 11h7" opacity="0.6"/>
+                </svg>
+            </div>
+            <div>
+                <div class="brand-name">Minitela</div>
+                <div class="brand-sub">GO · Positivo</div>
+            </div>
+        </div>
+
+        <button class="nav-item active" data-view="screen">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+            Tela
+        </button>
+        <button class="nav-item" data-view="notes">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 11h6M9 15h4M7 3h10a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/></svg>
+            Notas
+        </button>
+        <button class="nav-item" data-view="monitor">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>
+            Monitor
+        </button>
+        <button class="nav-item" data-view="settings">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            Configurações
+        </button>
+
+        <div class="sidebar-foot">
+            <span class="conn-dot off" id="connDot"></span>
+            <span id="connText">Desconectado</span>
+        </div>
+    </aside>
+
+    <!-- Main content -->
+    <main class="main">
+        <!-- Screen view -->
+        <section class="view active" id="view-screen">
+            <div class="topbar">
+                <div>
+                    <h1 class="page-title">Tela</h1>
+                    <p class="page-dek">Escreva mensagens e ajuste o brilho da mini tela Positivo em tempo real.</p>
+                </div>
+            </div>
+
+            <div class="grid-2">
+                <div class="col-full">
+                    <div class="card">
+                        <div class="card-title">Telas da mini tela <span class="hint">escolha uma ou use a tecla dedicada do notebook</span></div>
+                        <div class="page-picker">
+                            <button class="page-btn" data-page="1">WhatsApp</button>
+                            <button class="page-btn" data-page="2">Notas</button>
+                            <button class="page-btn" data-page="3">Monitor</button>
+                            <button class="page-btn" data-page="4">Clima</button>
+                            <button class="page-btn" data-page="5">Imagem</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div>
+                    <div class="card">
+                        <div class="card-title">Conteúdo <span class="hint">máx. 100 · acentos são convertidos</span></div>
+                        <label class="field-label" for="textInput">Mensagem</label>
+                        <textarea id="textInput" class="textarea" placeholder="Digite o texto que aparecerá na tela..."></textarea>
+                        <div class="char-count" id="charCount">0 / 100</div>
+                        <div class="controls" style="margin-top:14px">
+                            <button class="btn btn-primary" id="btnSend">Enviar para a tela</button>
+                            <button class="btn btn-ghost" id="btnSendDate">Enviar data/hora</button>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-title">Brilho</div>
+                        <div class="range-row">
+                            <input type="range" id="brightness" min="0" max="100" value="60"/>
+                            <span class="val" id="brightnessVal">60%</span>
+                        </div>
+                        <div class="controls" style="margin-top:14px">
+                            <button class="btn btn-ghost btn-sm" data-brl="100">Máx</button>
+                            <button class="btn btn-ghost btn-sm" data-brl="60">60%</button>
+                            <button class="btn btn-ghost btn-sm" data-brl="30">30%</button>
+                            <button class="btn btn-ghost btn-sm" data-brl="0">Desligar</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div>
+                    <div class="screen-stage">
+                        <div class="screen-label">Pré-visualização</div>
+                        <div class="miniscreen">
+                            <div class="preview-text" id="previewText">Minitela Go</div>
+                        </div>
+                        <div class="screen-bars"><i></i><i></i><i></i><i></i></div>
+                        <div class="controls">
+                            <button class="btn btn-primary btn-sm" id="btnPreviewBright">Aplicar brilho</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Notas view -->
+        <section class="view" id="view-notes">
+            <div class="topbar">
+                <div>
+                    <h1 class="page-title">Notas</h1>
+                    <p class="page-dek">Configure os 3 lembretes (texto e horário) exibidos na tela de Notas da mini tela.</p>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">Lembretes</div>
+                <div class="note-grid">
+                    <div class="note-row">
+                        <div>
+                            <label class="field-label" for="note1Text">Lembrete 1</label>
+                            <input type="text" id="note1Text" placeholder="Texto da primeira nota..." maxlength="96"/>
+                        </div>
+                        <div>
+                            <label class="field-label" for="note1Time">Horário</label>
+                            <input type="time" id="note1Time"/>
+                        </div>
+                    </div>
+                    <div class="note-row">
+                        <div>
+                            <label class="field-label" for="note2Text">Lembrete 2</label>
+                            <input type="text" id="note2Text" placeholder="Texto da segunda nota..." maxlength="96"/>
+                        </div>
+                        <div>
+                            <label class="field-label" for="note2Time">Horário</label>
+                            <input type="time" id="note2Time"/>
+                        </div>
+                    </div>
+                    <div class="note-row">
+                        <div>
+                            <label class="field-label" for="note3Text">Lembrete 3</label>
+                            <input type="text" id="note3Text" placeholder="Texto da terceira nota..." maxlength="96"/>
+                        </div>
+                        <div>
+                            <label class="field-label" for="note3Time">Horário</label>
+                            <input type="time" id="note3Time"/>
+                        </div>
+                    </div>
+                    <div class="controls">
+                        <button class="btn btn-primary" id="btnSaveNotes">Salvar notas</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Monitor view -->
+        <section class="view" id="view-monitor">
+            <div class="topbar">
+                <div>
+                    <h1 class="page-title">Monitor</h1>
+                    <p class="page-dek">Acompanhe CPU, bateria e Wi-Fi, enviados à mini tela automaticamente.</p>
+                </div>
+                <button class="btn btn-primary" id="btnMonitorToggle">Iniciar</button>
+            </div>
+
+            <div class="stats">
+                <div class="stat">
+                    <div class="k">CPU</div>
+                    <div class="v" id="statCpu">--<small>%</small></div>
+                </div>
+                <div class="stat">
+                    <div class="k">Bateria</div>
+                    <div class="v" id="statBat">--<small>%</small></div>
+                </div>
+                <div class="stat">
+                    <div class="k">Wi-Fi</div>
+                    <div class="v" id="statWifi">--</div>
+                    <div class="sub" id="statWifiSig">sinal: --</div>
+                </div>
+            </div>
+
+            <div class="card" style="margin-top:20px">
+                <div class="card-title">Ao vivo na tela</div>
+                <div class="empty-hint" id="monitorHint">Inicie o monitor para ver os dados aparecendo na mini tela a cada poucos segundos.</div>
+            </div>
+        </section>
+
+        <!-- Settings view -->
+        <section class="view" id="view-settings">
+            <div class="topbar">
+                <div>
+                    <h1 class="page-title">Configurações</h1>
+                    <p class="page-dek">Controle como o Minitela Go se comporta no seu notebook.</p>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">Inicialização</div>
+                <div class="switch-row">
+                    <div>
+                        <div class="t">Iniciar com o Windows</div>
+                        <div class="d">Abre o app automaticamente no login e fica na bandeja.</div>
+                    </div>
+                    <button class="switch" id="swAutoStart" role="switch" aria-checked="false"></button>
+                </div>
+                <div class="switch-row">
+                    <div>
+                        <div class="t">Conectar na inicialização</div>
+                        <div class="d">Conecta à mini tela assim que o app abre.</div>
+                    </div>
+                    <button class="switch" id="swConnect" role="switch" aria-checked="false"></button>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">Área de trabalho</div>
+                <div class="switch-row">
+                    <div>
+                        <div class="t">Atalho para a mini tela</div>
+                        <div class="d">Cria um atalho com ícone na área de trabalho do OneDrive.</div>
+                    </div>
+                    <button class="btn btn-ghost btn-sm" id="btnShortcut">Criar atalho</button>
+                </div>
+            </div>
+        </section>
+    </main>
+</div>
+
+<div class="toast-wrap" id="toastWrap"></div>
+
+<script src="./src/main.js" type="module"></script>
+</body>
+</html>

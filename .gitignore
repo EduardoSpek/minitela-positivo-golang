@@ -1,0 +1,22 @@
+# Binários compilados
+*.exe
+*.dll
+build/bin/
+minitela-gui/build/bin/
+
+# Frontend (Wails/Vite)
+minitela-gui/frontend/dist/
+minitela-gui/frontend/node_modules/
+
+# Go
+*.test
+
+# Sistema
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp

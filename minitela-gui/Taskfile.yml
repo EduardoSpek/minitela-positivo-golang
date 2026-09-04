@@ -1,0 +1,7 @@
+version: '3'
+
+tasks:
+  postbuild:windows/amd64:
+    cmds:
+      - cp "appicon.png" "build/bin/appicon.png"
+    silent: true
