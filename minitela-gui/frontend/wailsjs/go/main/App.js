@@ -18,6 +18,10 @@ export function Disconnect() {
   return window['go']['main']['App']['Disconnect']();
 }
 
+export function GetNotes() {
+  return window['go']['main']['App']['GetNotes']();
+}
+
 export function GetSystemStats() {
   return window['go']['main']['App']['GetSystemStats']();
 }

@@ -9,6 +9,8 @@ export function CreateShortcut():Promise<string>;
 
 export function Disconnect():Promise<void>;
 
+export function GetNotes():Promise<Array<any>>;
+
 export function GetSystemStats():Promise<Record<string, any>>;
 
 export function GetWeatherConfig():Promise<Record<string, any>>;

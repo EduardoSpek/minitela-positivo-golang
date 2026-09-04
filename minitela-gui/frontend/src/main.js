@@ -4,7 +4,7 @@ import {
     Connect, Disconnect, IsConnected,
     SetBacklight, WriteText, SetDateTime,
     StartMonitor, StopMonitor, GetSystemStats,
-    GoToPage, SetNotes,
+    GoToPage, SetNotes, GetNotes,
     GetWeatherConfig, SetWeatherConfig,
     AutoStartEnabled, SetAutoStartEnabled, CreateShortcut,
     UploadGifFile, UploadGifFromPath, RestoreTheme, UploadImageToTheme,
@@ -237,7 +237,17 @@ function bindPageSelectors() {
     });
 }
 
-// ---- notas (3 lembretes: texto + horário) ----
+// ---- notas (3 lembretes: texto + data/hora de disparo) ----
+async function loadNotesView() {
+    try {
+        const saved = await GetNotes();
+        const ids = ['note1Text', 'note1Time', 'note2Text', 'note2Time', 'note3Text', 'note3Time'];
+        for (let i = 0; i < saved.length && i < 3; i++) {
+            if (saved[i][0] != null) $(ids[i * 2]).value = saved[i][0];
+            if (saved[i][1] != null) $(ids[i * 2 + 1]).value = saved[i][1];
+        }
+    } catch (e) { /* ignore */ }
+}
 function collectNotes() {
     return [
         [$('note1Text').value, $('note1Time').value],
@@ -250,7 +260,7 @@ $('btnSaveNotes').addEventListener('click', async () => {
     try {
         const [n1, n2, n3] = collectNotes();
         await SetNotes(n1[0], n1[1], n2[0], n2[1], n3[0], n3[1]);
-        toast('Notas salvas (enviadas quando a tela de Notas estiver ativa)');
+        toast('Notas salvas (disparam e mudam a tela para Notas quando chegar a data/hora)');
     } catch (e) {
         toast('Falha: ' + String(e), 'err');
     }
@@ -402,5 +412,6 @@ async function loadAutoStartState() {
     loadAutoStartState();
     bindPageSelectors();
     refreshWeatherView();
+    loadNotesView();
     tryConnect();
 })();
