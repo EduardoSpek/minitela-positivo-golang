@@ -14,6 +14,7 @@ import { EventsOn } from '../wailsjs/runtime/runtime';
 const $ = (id) => document.getElementById(id);
 
 const MAX = 100;
+const CONNECT_ON_START = 'connectOnStart';
 
 // ---- state ----
 let monitorOn = false;
@@ -203,6 +204,7 @@ $('swConnect').addEventListener('click', () => {
     const sw = $('swConnect');
     const on = !sw.classList.contains('on');
     setSwitch(sw, on);
+    localStorage.setItem(CONNECT_ON_START, on ? '1' : '0');
     if (on) {
         tryConnect().then(() => { if (connected) startMonitorAuto(); });
     } else {
@@ -403,15 +405,20 @@ async function loadAutoStartState() {
         const on = await AutoStartEnabled();
         setSwitch($('swAutoStart'), on);
     } catch (e) { /* ignore */ }
+    // "Conectar na inicialização" is a UI preference kept in localStorage so it
+    // survives app restarts (it is not the Windows registry auto-start above).
+    setSwitch($('swConnect'), localStorage.getItem(CONNECT_ON_START) === '1');
 }
 
-(function init() {
+(async function init() {
     renderBla(60);
     refreshCharCount();
     setPreview('Minitela Go');
-    loadAutoStartState();
+    await loadAutoStartState();
     bindPageSelectors();
     refreshWeatherView();
     loadNotesView();
-    tryConnect();
+    // Respect the "Conectar na inicialização" preference: connect on launch only
+    // when the user enabled it, otherwise leave the device off until asked.
+    if (localStorage.getItem(CONNECT_ON_START) === '1') tryConnect();
 })();
