@@ -6,11 +6,13 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"unsafe"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
+	"golang.org/x/sys/windows"
 )
 
 //go:embed all:frontend/dist
@@ -30,7 +32,44 @@ func init() {
 	appIconPath = filepath.Join(dir, "appicon.png")
 }
 
+// singleInstanceMutex is a named kernel mutex that guarantees only one app
+// process runs at a time. If another instance already owns it, this process
+// exits immediately instead of showing a second window/tray icon.
+const singleInstanceMutexName = `Local\MinitelaGoSingleInstance`
+
+// acquireSingleInstance tries to take the single-instance mutex. It returns the
+// handle to keep alive for the process lifetime (a second, concurrent call
+// would return already-exists) and whether this process won the mutex.
+func acquireSingleInstance() (windows.Handle, bool) {
+	kernel32 := windows.NewLazySystemDLL("kernel32.dll")
+	createMutex := kernel32.NewProc("CreateMutexW")
+	namePtr, _ := windows.UTF16PtrFromString(singleInstanceMutexName)
+	h, _, lastErr := createMutex.Call(0, 1, uintptr(unsafe.Pointer(namePtr)))
+	// ERROR_ALREADY_EXISTS (183) means another live instance owns the mutex.
+	if lastErr == windows.ERROR_ALREADY_EXISTS {
+		return 0, false
+	}
+	return windows.Handle(h), h != 0
+}
+
 func main() {
+	// Refuse to start a second instance: if one is already running (system
+	// tray, hidden window), just exit.
+	_, acquired := acquireSingleInstance()
+	if !acquired {
+		// Bring the already-running instance's window to the front so the user
+		// sees the app instead of silently nothing happening.
+		user32 := windows.NewLazySystemDLL("user32.dll")
+		findWindow := user32.NewProc("FindWindowW")
+		titlePtr, _ := windows.UTF16PtrFromString("Minitela Go")
+		hwnd, _, _ := findWindow.Call(0, uintptr(unsafe.Pointer(titlePtr)))
+		if hwnd != 0 {
+			user32.NewProc("ShowWindow").Call(hwnd, 5 /*SW_SHOW*/)
+			user32.NewProc("SetForegroundWindow").Call(hwnd)
+		}
+		return
+	}
+
 	app := NewApp()
 
 	cb := &appCallbacks{

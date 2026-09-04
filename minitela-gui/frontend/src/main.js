@@ -214,6 +214,29 @@ $('swConnect').addEventListener('click', () => {
     }
 });
 
+// "Reconectar": desliga o monitor, fecha a conexão atual e abre de novo
+// (útil quando a mini tela travou ou caiu da porta USB).
+$('btnReconnect').addEventListener('click', async () => {
+    const btn = $('btnReconnect');
+    btn.classList.add('spinning');
+    btn.disabled = true;
+    try {
+        await StopMonitor();
+        monitorOn = false;
+        await Disconnect();
+        await Connect('');
+        setConn(true);
+        startMonitorAuto();
+        toast('Reconectada à mini tela');
+    } catch (e) {
+        setConn(false);
+        toast('Falha na reconexão: ' + String(e), 'err');
+    } finally {
+        btn.classList.remove('spinning');
+        btn.disabled = false;
+    }
+});
+
 // ---- page selectors (alternar entre as telas da minitela) ----
 // Hardware pages are fixed (1=WhatsApp, 2=Notas, 3=Monitor, 4=Clima, 5=Imagem)
 // but WhatsApp is disabled, so only pages 2-5 are selectable.

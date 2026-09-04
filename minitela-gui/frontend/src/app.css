@@ -117,15 +117,29 @@ html, body {
     font-size: 12px;
 }
 
-.conn-dot {
-    width: 9px;
-    height: 9px;
-    border-radius: 50%;
-    background: var(--warn);
-    box-shadow: 0 0 10px currentColor;
-}
+.conn-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--warn); box-shadow: 0 0 10px currentColor; }
 .conn-dot.on { background: var(--ok); color: var(--ok); }
 .conn-dot.off { background: var(--warn); color: var(--warn); }
+
+.btn-reconnect {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: 1px solid var(--line);
+    border-radius: 50%;
+    background: transparent;
+    color: var(--text-dim);
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.btn-reconnect:hover { background: var(--bg-2); color: var(--text); border-color: var(--accent); }
+.btn-reconnect:active { transform: scale(0.94); }
+.btn-reconnect .ic { width: 15px; height: 15px; }
+.btn-reconnect.spinning .ic { animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 
 /* ===== Main ===== */
 .main {
