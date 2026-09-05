@@ -573,10 +573,12 @@ input[type="range"]::-webkit-slider-thumb {
 
 /* ===== Notas screen ===== */
 .note-grid { display: grid; gap: 14px; }
-.note-row { display: grid; grid-template-columns: 1fr 130px; gap: 10px; align-items: end; }
+.note-row { display: grid; grid-template-columns: 1fr 150px; gap: 10px; align-items: end; }
 .note-row input[type="text"],
-.note-row input[type="time"] {
+.note-row input[type="time"],
+.note-row input[type="datetime-local"] {
     width: 100%;
+    min-width: 0;
     background: var(--bg-2);
     border: 1px solid var(--line);
     color: var(--text);
@@ -613,4 +615,55 @@ input[type="range"]::-webkit-slider-thumb {
 .wday .wd-desc { font-size: 10.5px; color: var(--text-soft); min-height: 2.4em; }
 @media (max-width: 760px) {
     .weather-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* ===== Schedule (Agenda) screen ===== */
+.schedule-list { display: grid; gap: 12px; }
+.sched-row {
+    display: grid;
+    grid-template-columns: auto 90px 1fr 170px auto;
+    gap: 10px;
+    align-items: center;
+    padding: 12px 14px;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+}
+.sched-row input,
+.sched-row select {
+    width: 100%;
+    min-width: 0;
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    color: var(--text);
+    padding: 8px 10px;
+    border-radius: 10px;
+    font-size: 14px;
+}
+.sched-row .sched-time { font-variant-numeric: tabular-nums; }
+.sched-bright {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.sched-bright input[type="range"] { flex: 1; min-width: 0; }
+.sched-bright .val { font-size: 12px; font-weight: 700; color: var(--accent); min-width: 34px; text-align: right; }
+.btn-remove-rule {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border: 1px solid var(--line);
+    border-radius: 50%;
+    background: transparent;
+    color: var(--text-dim);
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.btn-remove-rule:hover { background: var(--danger, #e5484d); color: #fff; border-color: transparent; }
+.sched-empty { color: var(--text-dim); font-size: 13px; padding: 8px 2px; }
+@media (max-width: 760px) {
+    .sched-row { grid-template-columns: 1fr; }
 }

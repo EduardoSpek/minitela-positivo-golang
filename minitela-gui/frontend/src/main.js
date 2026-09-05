@@ -5,6 +5,7 @@ import {
     SetBacklight, WriteText, SetDateTime,
     StartMonitor, StopMonitor, GetSystemStats,
     GoToPage, SetNotes, GetNotes,
+    GetSchedules, SetSchedules,
     GetWeatherConfig, SetWeatherConfig,
     AutoStartEnabled, SetAutoStartEnabled, CreateShortcut,
     UploadGifFile, UploadGifFromPath, RestoreTheme, UploadImageToTheme,
@@ -291,6 +292,97 @@ $('btnSaveNotes').addEventListener('click', async () => {
     }
 });
 
+// ---- agenda (pré-definições diárias: horário -> tela + brilho) ----
+const SCHED_PAGES = { 2: 'Notas', 3: 'Monitor', 4: 'Clima', 5: 'Imagem' };
+let scheduleRules = [];
+
+function scheduleRowHTML(r, i) {
+    const pageOpts = Object.entries(SCHED_PAGES)
+        .map(([id, name]) => `<option value="${id}" ${Number(r.page) === Number(id) ? 'selected' : ''}>${name}</option>`)
+        .join('');
+    return `
+        <div class="sched-row" data-i="${i}">
+            <button class="switch ${r.enabled ? 'on' : ''}" role="switch" aria-checked="${r.enabled ? 'true' : 'false'}"></button>
+            <input type="time" class="sched-time" value="${r.time || ''}"/>
+            <select class="sched-page">${pageOpts}</select>
+            <div class="sched-bright">
+                <input type="range" min="0" max="100" value="${r.brightness}" class="sched-brightness"/>
+                <span class="val">${r.brightness}%</span>
+            </div>
+            <button class="btn-remove-rule" title="Remover">✕</button>
+        </div>`;
+}
+
+function renderSchedule() {
+    const wrap = $('scheduleList');
+    if (!scheduleRules.length) {
+        wrap.innerHTML = '<div class="sched-empty">Nenhum horário configurado. Clique em "Adicionar horário" para criar um.</div>';
+        return;
+    }
+    wrap.innerHTML = scheduleRules.map(scheduleRowHTML).join('');
+
+    wrap.querySelectorAll('.sched-row').forEach((row) => {
+        const i = Number(row.dataset.i);
+        row.querySelector('.switch').addEventListener('click', () => {
+            scheduleRules[i].enabled = !scheduleRules[i].enabled;
+            renderSchedule();
+        });
+        row.querySelector('.sched-time').addEventListener('change', (e) => {
+            scheduleRules[i].time = e.target.value;
+        });
+        row.querySelector('.sched-page').addEventListener('change', (e) => {
+            scheduleRules[i].page = Number(e.target.value);
+        });
+        row.querySelector('.sched-brightness').addEventListener('input', (e) => {
+            scheduleRules[i].brightness = Number(e.target.value);
+            row.querySelector('.sched-bright .val').textContent = e.target.value + '%';
+        });
+        row.querySelector('.btn-remove-rule').addEventListener('click', () => {
+            scheduleRules.splice(i, 1);
+            renderSchedule();
+        });
+    });
+}
+
+async function loadScheduleView() {
+    try {
+        scheduleRules = await GetSchedules();
+        if (!Array.isArray(scheduleRules)) scheduleRules = [];
+        scheduleRules = scheduleRules.map((r) => ({
+            enabled: !!r.enabled,
+            time: r.time || '',
+            page: r.page || 3,
+            brightness: r.brightness == null ? 60 : r.brightness,
+        }));
+        renderSchedule();
+    } catch (e) { /* ignore */ }
+}
+
+$('btnAddRule').addEventListener('click', () => {
+    scheduleRules.push({ enabled: true, time: '12:00', page: 3, brightness: 60 });
+    renderSchedule();
+});
+
+$('btnSaveSchedules').addEventListener('click', async () => {
+    try {
+        const valid = scheduleRules
+            .filter((r) => /^\d{2}:\d{2}$/.test(r.time || ''))
+            .map((r) => ({ enabled: r.enabled, time: r.time, page: r.page, brightness: r.brightness }));
+        await SetSchedules(valid);
+        scheduleRules = valid;
+        renderSchedule();
+        toast(`Pré-definições salvas (${valid.length})`);
+    } catch (e) {
+        toast('Falha ao salvar: ' + String(e), 'err');
+    }
+});
+
+EventsOn('schedule-run', (d) => {
+    if (d && d.time) {
+        toast(`Agenda ${d.time}: ${d.page} · brilho ${d.brightness}%`);
+    }
+});
+
 $('btnShortcut').addEventListener('click', async () => {
     try {
         await CreateShortcut();
@@ -441,6 +533,7 @@ async function loadAutoStartState() {
     bindPageSelectors();
     refreshWeatherView();
     loadNotesView();
+    loadScheduleView();
     // Respect the "Conectar na inicialização" preference: connect on launch only
     // when the user enabled it, otherwise leave the device off until asked.
     if (localStorage.getItem(CONNECT_ON_START) === '1') tryConnect();

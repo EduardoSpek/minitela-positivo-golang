@@ -22,6 +22,10 @@ export function GetNotes() {
   return window['go']['main']['App']['GetNotes']();
 }
 
+export function GetSchedules() {
+  return window['go']['main']['App']['GetSchedules']();
+}
+
 export function GetSystemStats() {
   return window['go']['main']['App']['GetSystemStats']();
 }
@@ -64,6 +68,10 @@ export function SetNotes(arg1, arg2, arg3, arg4, arg5, arg6) {
 
 export function SetPage(arg1) {
   return window['go']['main']['App']['SetPage'](arg1);
+}
+
+export function SetSchedules(arg1) {
+  return window['go']['main']['App']['SetSchedules'](arg1);
 }
 
 export function SetSystemDateTime(arg1) {

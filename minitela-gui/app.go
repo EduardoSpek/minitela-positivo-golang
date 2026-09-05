@@ -50,6 +50,10 @@ type App struct {
 	// weather state for the Clima screen
 	weatherMu   sync.Mutex
 	weatherLast []DayForecast
+
+	// daily preset (Agenda) tracking: last fired HH:MM per rule index
+	schedMu   sync.Mutex
+	schedLast map[int]string
 }
 
 // note holds a scheduled reminder for the Notas screen. Text is the message;
@@ -372,6 +376,10 @@ func (a *App) StartMonitor(intervalSeconds int) error {
 				}
 				if _, err := fireDueNote(c, a); err != nil {
 					runtimeEmit(a.ctx, "monitor-error", "notas: "+err.Error())
+				}
+				// Daily presets (Agenda): switch page + brightness at HH:MM.
+				if err := a.fireDueSchedule(c); err != nil {
+					runtimeEmit(a.ctx, "monitor-error", "agenda: "+err.Error())
 				}
 			}
 		}
