@@ -96,6 +96,9 @@ Section
 
     !insertmacro wails.files
 
+    # Tray icon sidecar: the app loads icon.ico from the exe folder.
+    File "..\icon.ico"
+
     CreateShortcut "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
     CreateShortCut "$DESKTOP\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
 

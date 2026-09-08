@@ -10,7 +10,7 @@ import {
     AutoStartEnabled, SetAutoStartEnabled, CreateShortcut,
     UploadGifFile, UploadGifFromPath, RestoreTheme, UploadImageToTheme,
 } from '../wailsjs/go/main/App';
-import { EventsOn } from '../wailsjs/runtime/runtime';
+import { EventsOn, BrowserOpenURL } from '../wailsjs/runtime/runtime';
 
 const $ = (id) => document.getElementById(id);
 
@@ -390,6 +390,10 @@ $('btnShortcut').addEventListener('click', async () => {
     } catch (e) {
         toast('Falha ao criar atalho: ' + String(e), 'err');
     }
+});
+
+$('btnInstagram').addEventListener('click', () => {
+    BrowserOpenURL('https://www.instagram.com/eduardospek');
 });
 
 // ---- clima ----

@@ -2,6 +2,12 @@
 
 Controlador da **mini tela** dos notebooks Positivo (1.54" IPS 240×240, abaixo do teclado), escrito em Go. Este projeto foi feito por engenharia reversa do app oficial `MiniTelaApp` (Electron + protocolo UART) e do projeto de referência `open-minitela-R15M`.
 
+> **App com interface gráfica:** a pasta `minitela-gui/` contém o **Minitela Go** (Wails v2): monitor ao vivo de CPU/bateria/Wi-Fi/Bluetooth, relógio, lembretes (Notas), previsão do tempo (Clima), envio de imagens/GIFs, pré-definições por horário (Agenda) e bandeja do sistema. Baixe o instalador na [página de releases](../../releases).
+
+## Créditos
+
+Desenvolvido por **Eduardo Spek** — [www.instagram.com/eduardospek](https://www.instagram.com/eduardospek) (`@eduardospek`)
+
 ## Como funciona
 
 A mini tela é um painel HMI que aparece como **porta serial virtual (CDC)** no sistema. No Windows, o dispositivo se identifica como:
@@ -39,6 +45,15 @@ O bit 0x15 do *control* habilita CRC. O app oficial envia com CRC desabilitado. 
 
 ```powershell
 go build -o minitela.exe ./cmd/minitela-cli
+```
+
+### App Minitela Go (interface gráfica)
+
+Baixe o instalador (`Minitela Go Setup 1.0.0.exe`) ou o ZIP portátil na [página de releases](../../releases) — não precisa de admin na instalação por usuário. Para gerar o instalador a partir do código (requer [NSIS](https://nsis.sourceforge.io/) instalado):
+
+```powershell
+cd minitela-gui
+wails build -nsis
 ```
 
 ## Uso
