@@ -34,6 +34,10 @@ export function GetWeatherConfig() {
   return window['go']['main']['App']['GetWeatherConfig']();
 }
 
+export function GoToImageSlot(arg1) {
+  return window['go']['main']['App']['GoToImageSlot'](arg1);
+}
+
 export function GoToPage(arg1) {
   return window['go']['main']['App']['GoToPage'](arg1);
 }

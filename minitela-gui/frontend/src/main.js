@@ -4,7 +4,7 @@ import {
     Connect, Disconnect, IsConnected,
     SetBacklight, WriteText, SetDateTime,
     StartMonitor, StopMonitor, GetSystemStats,
-    GoToPage, SetNotes, GetNotes,
+    GoToPage, GoToImageSlot, SetNotes, GetNotes,
     GetSchedules, SetSchedules,
     GetWeatherConfig, SetWeatherConfig,
     AutoStartEnabled, SetAutoStartEnabled, CreateShortcut,
@@ -176,7 +176,7 @@ EventsOn('page', (p) => {
     if (p === undefined) return;
     // Apenas destaca o botão correspondente no seletor de telas. Não mexe na
     // navegação do app: o usuário continua na aba que escolheu.
-    document.querySelectorAll('[data-page]').forEach((b) => {
+    document.querySelectorAll('.page-btn[data-page]').forEach((b) => {
         b.classList.toggle('active-page', Number(b.dataset.page) === Number(p));
     });
 });
@@ -244,7 +244,7 @@ $('btnReconnect').addEventListener('click', async () => {
 const PAGE_NAMES = { 2: 'Notas', 3: 'Monitor', 4: 'Clima', 5: 'Imagem' };
 let pageBusy = false;
 function bindPageSelectors() {
-    document.querySelectorAll('[data-page]').forEach((btn) => {
+    document.querySelectorAll('.page-btn[data-page]').forEach((btn) => {
         btn.addEventListener('click', async () => {
             if (pageBusy) return; // drop rapid clicks while a switch is in flight
             pageBusy = true;
@@ -510,9 +510,24 @@ if (imagePageSeg) {
         if (!btn) return;
         imagePageSeg.querySelectorAll('.seg-btn').forEach((b) => b.classList.remove('is-active'));
         btn.classList.add('is-active');
-        imagePage = parseInt(btn.dataset.page, 10) || 1;
+        imagePage = parseInt(btn.dataset.imgPage, 10) || 1;
     });
 }
+
+// "Exibir Imagem N": mostra o slot N (Gif1/2/3) na mini tela escrevendo o
+// índice da página do tema (4/5/6) no registrador de página.
+document.querySelectorAll('[data-img-slot]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+        const slot = parseInt(btn.dataset.imgSlot, 10) || 1;
+        if (!connected) { tryConnect(); }
+        try {
+            await GoToImageSlot(slot);
+            toast(`Exibindo Imagem ${slot} na mini tela`);
+        } catch (e) {
+            toast('Falha ao exibir: ' + String(e), 'err');
+        }
+    });
+});
 
 // ---- init ----
 async function loadAutoStartState() {

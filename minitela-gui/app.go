@@ -244,6 +244,17 @@ func (a *App) GoToPage(page int) error {
 	return a.SetPage(page)
 }
 
+// GoToImageSlot shows one of the three theme image slots on the mini screen.
+// The theme's Imagem pages are Gif1/2/3 at data.json pageList indices 4/5/6,
+// and the page register follows index = value-1 (5->Gif1), so slot N writes
+// 4+N (slot 1 = 5, same as PageImagem; slot 2 = 6; slot 3 = 7).
+func (a *App) GoToImageSlot(slot int) error {
+	if slot < 1 || slot > 3 {
+		return fmt.Errorf("slot de imagem inválido: %d (use 1..3)", slot)
+	}
+	return a.SetPage(4 + slot)
+}
+
 // parseNoteDue parses a datetime-local value ("2006-01-02T15:04") into a
 // reminder schedule. Empty/invalid values return the zero time (no schedule).
 func parseNoteDue(s string) time.Time {

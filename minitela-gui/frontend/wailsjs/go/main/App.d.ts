@@ -18,6 +18,8 @@ export function GetSystemStats():Promise<Record<string, any>>;
 
 export function GetWeatherConfig():Promise<Record<string, any>>;
 
+export function GoToImageSlot(arg1:number):Promise<void>;
+
 export function GoToPage(arg1:number):Promise<void>;
 
 export function IsConnected():Promise<boolean>;
