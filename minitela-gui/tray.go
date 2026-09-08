@@ -29,27 +29,27 @@ var (
 // classic context menu — the stock getlantern/systray only shows a menu.
 
 var (
-	user32              = windows.NewLazySystemDLL("user32.dll")
-	shell32             = windows.NewLazySystemDLL("shell32.dll")
-	procCreateWindowEx  = user32.NewProc("CreateWindowExW")
-	procDefWindowProc   = user32.NewProc("DefWindowProcW")
-	procRegisterClassEx = user32.NewProc("RegisterClassExW")
-	procUnregisterClass = user32.NewProc("UnregisterClassW")
-	procGetMessage      = user32.NewProc("GetMessageW")
-	procTranslateMessage = user32.NewProc("TranslateMessage")
-	procDispatchMessage = user32.NewProc("DispatchMessageW")
-	procShellNotify     = shell32.NewProc("Shell_NotifyIconW")
-	procSetForeground   = user32.NewProc("SetForegroundWindow")
-	procTrackPopupMenu  = user32.NewProc("TrackPopupMenu")
-	procCreatePopupMenu = user32.NewProc("CreatePopupMenu")
-	procDestroyMenu     = user32.NewProc("DestroyMenu")
-	procAppendMenu      = user32.NewProc("AppendMenuW")
-	procSetMenuDefault  = user32.NewProc("SetMenuDefaultItem")
+	user32                    = windows.NewLazySystemDLL("user32.dll")
+	shell32                   = windows.NewLazySystemDLL("shell32.dll")
+	procCreateWindowEx        = user32.NewProc("CreateWindowExW")
+	procDefWindowProc         = user32.NewProc("DefWindowProcW")
+	procRegisterClassEx       = user32.NewProc("RegisterClassExW")
+	procUnregisterClass       = user32.NewProc("UnregisterClassW")
+	procGetMessage            = user32.NewProc("GetMessageW")
+	procTranslateMessage      = user32.NewProc("TranslateMessage")
+	procDispatchMessage       = user32.NewProc("DispatchMessageW")
+	procShellNotify           = shell32.NewProc("Shell_NotifyIconW")
+	procSetForeground         = user32.NewProc("SetForegroundWindow")
+	procTrackPopupMenu        = user32.NewProc("TrackPopupMenu")
+	procCreatePopupMenu       = user32.NewProc("CreatePopupMenu")
+	procDestroyMenu           = user32.NewProc("DestroyMenu")
+	procAppendMenu            = user32.NewProc("AppendMenuW")
+	procSetMenuDefault        = user32.NewProc("SetMenuDefaultItem")
+	procRegisterWindowMessage = user32.NewProc("RegisterWindowMessageW")
 )
 
 const (
 	wmSystrayMessage  = 0x0400 + 1 // WM_APP + 1
-	wmTaskbarCreated  = 0x8000     // WM_APP + 0x8000, re-register on shell restart
 	callBackMessageID = 1
 
 	WM_LBUTTONUP     = 0x0202
@@ -67,9 +67,9 @@ const (
 	NIM_MODIFY = 0x00000001
 	NIM_DELETE = 0x00000002
 
-	MF_STRING   = 0x00000000
+	MF_STRING    = 0x00000000
 	MF_SEPARATOR = 0x00000800
-	MF_DEFAULT  = 0x00001000
+	MF_DEFAULT   = 0x00001000
 
 	WM_USER = 0x0400
 )
@@ -83,14 +83,14 @@ type notifyIconData struct {
 	hIcon            uintptr
 	szTip            [128]uint16
 	// remaining fields unused, keep struct storable via cbSize
-	dwState        uint32
-	dwStateMask    uint32
-	szInfo         [256]uint16
-	uVersion       uint32
-	szInfoTitle    [64]uint16
-	dwInfoFlags    uint32
-	guidItem       windows.GUID
-	hBalloonIcon   uintptr
+	dwState      uint32
+	dwStateMask  uint32
+	szInfo       [256]uint16
+	uVersion     uint32
+	szInfoTitle  [64]uint16
+	dwInfoFlags  uint32
+	guidItem     windows.GUID
+	hBalloonIcon uintptr
 }
 
 type wndClassEx struct {
@@ -115,6 +115,16 @@ var (
 	trayWindowOnce sync.Once
 	trayNID        notifyIconData
 	trayIconHICON  uintptr
+	// trayWndProcAddr retains the window-procedure callback for the process
+	// lifetime. windows.NewCallback results MUST be kept alive in a Go
+	// variable while Windows may call them; otherwise the GC frees the
+	// callback and the tray icon stays visible but stops responding
+	// (no menu, no double-click) seemingly at random.
+	trayWndProcAddr uintptr
+	// trayTaskbarCreatedMsg is the registered "TaskbarCreated" message id
+	// (from RegisterWindowMessageW) used to re-add the icon if explorer
+	// restarts.
+	trayTaskbarCreatedMsg uint32
 )
 
 // startTray launches the custom Windows tray in its own goroutine.
@@ -159,10 +169,22 @@ func createTrayWindow() {
 	hInst, _, _ := kernel32.NewProc("GetModuleHandleW").Call(0)
 	classNamePtr, _ := windows.UTF16PtrFromString(windowClassName)
 
+	// Retain the callback BEFORE registering the class so the address stays
+	// valid for as long as the window exists (see trayWndProcAddr).
+	trayWndProcAddr = windows.NewCallback(trayWndProc)
+
+	// Resolve the real "TaskbarCreated" broadcast id (it is not a fixed
+	// constant) so the icon is re-added if explorer.exe restarts.
+	if namePtr, err := windows.UTF16PtrFromString("TaskbarCreated"); err == nil {
+		if r, _, _ := procRegisterWindowMessage.Call(uintptr(unsafe.Pointer(namePtr))); r != 0 {
+			trayTaskbarCreatedMsg = uint32(r)
+		}
+	}
+
 	wc := wndClassEx{
 		cbSize:        uint32(unsafe.Sizeof(wndClassEx{})),
 		style:         0,
-		lpfnWndProc:   windows.NewCallback(trayWndProc),
+		lpfnWndProc:   trayWndProcAddr,
 		hInstance:     hInst,
 		lpszClassName: classNamePtr,
 	}
@@ -233,10 +255,11 @@ func loadTrayIconHICON(path string) uintptr {
 // trayWndProc is the window procedure for the tray message-only window. It is
 // kept alive by being registered as a callback via windows.NewCallback.
 func trayWndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
-	switch message {
-	case wmTaskbarCreated:
+	if trayTaskbarCreatedMsg != 0 && message == trayTaskbarCreatedMsg {
 		// explorer.exe restarted; re-register the icon
 		procShellNotify.Call(NIM_ADD, uintptr(unsafe.Pointer(&trayNID)))
+	}
+	switch message {
 	case wmSystrayMessage:
 		switch lParam {
 		case WM_LBUTTONDBLCLK:
@@ -264,14 +287,14 @@ func trayWndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 }
 
 const (
-	cmdShow       = 1001
-	cmdB100       = 1002
-	cmdB60        = 1003
-	cmdB30        = 1004
-	cmdB0         = 1005
-	cmdMonitor    = 1006
-	cmdAutostart  = 1007
-	cmdQuit       = 1008
+	cmdShow      = 1001
+	cmdB100      = 1002
+	cmdB60       = 1003
+	cmdB30       = 1004
+	cmdB0        = 1005
+	cmdMonitor   = 1006
+	cmdAutostart = 1007
+	cmdQuit      = 1008
 )
 
 func handleTrayCommand(id uint32) {
@@ -344,9 +367,10 @@ func showTrayMenu() {
 	procGetCursorPos := user32.NewProc("GetCursorPos")
 	procGetCursorPos.Call(uintptr(unsafe.Pointer(&pt)))
 
-	procTrackPopupMenu.Call(
+	ret, _, _ := procTrackPopupMenu.Call(
 		menu,
-		0x00000002, // TPM_RETURNCMD
+		0x00000002, // TPM_RETURNCMD: the selected item id comes back as the
+		// return value instead of a WM_COMMAND message.
 		uintptr(pt.x),
 		uintptr(pt.y),
 		0,
@@ -354,4 +378,7 @@ func showTrayMenu() {
 		0,
 	)
 	procDestroyMenu.Call(menu)
+	if ret != 0 {
+		handleTrayCommand(uint32(ret))
+	}
 }
