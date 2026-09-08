@@ -113,6 +113,18 @@ func prepareWorkArea() (string, error) {
 	return work, nil
 }
 
+// persistThemeBase promotes a generated theme zip to be the base for the next
+// upload, so previously embedded images accumulate instead of reverting to
+// the factory theme on every send. Call only after the theme was flashed to
+// the device successfully.
+func persistThemeBase(work, generatedZip string) error {
+	base := filepath.Join(work, "Zip", "file.zip")
+	if err := os.MkdirAll(filepath.Dir(base), 0o755); err != nil {
+		return err
+	}
+	return copyFile(generatedZip, base)
+}
+
 // convertImageToGif turns raw image bytes (jpg/png/...) into a 192x192
 // optimized GIF on disk, replicating the official app's gifUtils output.
 func convertImageToGif(imgBytes []byte, gifPath, python string) error {

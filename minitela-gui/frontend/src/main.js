@@ -451,8 +451,8 @@ $('btnRestoreTheme').addEventListener('click', async () => {
     $('imageStatus').textContent = 'Enviando tema de teste (OTA)...';
     try {
         await RestoreTheme();
-        $('imageStatus').textContent = 'Tema re-enviado com éxito (OTA completo).';
-        toast('Tema re-enviado (test OTA)');
+        $('imageStatus').textContent = 'Tema restaurado; minitela de volta ao Monitor.';
+        toast('Tema restaurado');
     } catch (e) {
         $('imageStatus').textContent = 'Erro: ' + String(e);
         toast('Falha no envio OTA: ' + String(e), 'err');
@@ -469,12 +469,12 @@ $('btnUploadImage').addEventListener('click', async () => {
     if (!connected) { tryConnect(); }
     const btn = $('btnUploadImage');
     btn.classList.add('disabled');
-    $('imageStatus').textContent = `Convertendo e enviando à página Imagem ${page}...`;
+        $('imageStatus').textContent = `Convertendo e enviando à página Imagem ${page}... (a minitela vai reiniciar)`;
     try {
         const bytes = new Uint8Array(await file.arrayBuffer());
         await UploadImageToTheme(Array.from(bytes), page);
-        $('imageStatus').textContent = `Imagem aplicada à página Imagem ${page} (tema re-gerado).`;
-        toast('Imagem aplicada ao tema');
+            $('imageStatus').textContent = `Imagem aplicada e exibida na mini tela (slot ${page}).`;
+            toast(`Imagem ${page} aplicada e exibida`);
     } catch (e) {
         $('imageStatus').textContent = 'Erro: ' + String(e);
         toast('Falha no envio: ' + String(e), 'err');
@@ -492,7 +492,7 @@ $('btnSendTestGif') &&
         try {
             const testPath = 'C:\\Users\\spekv\\minitela-go\\test_gif.gif';
             await UploadGifFromPath(testPath);
-            $('imageStatus').textContent = 'GIF de teste enviado (raw). Verifique a página Imagem.';
+            $('imageStatus').textContent = 'GIF de teste enviado e exibido na página Imagem.';
             toast('GIF de teste enviado');
         } catch (e) {
             $('imageStatus').textContent = 'Erro: ' + String(e);

@@ -903,6 +903,26 @@ func (s *systemInfo) toMap() map[string]interface{} {
 	}
 }
 
+// waitReconnectAfterReboot re-establishes the serial link after a theme/GIF
+// flash reboots the device into the WhatsApp page and drops the connection
+// (USB re-enumeration). It mirrors the manual Reconectar flow: drop the stale
+// client, then retry Connect (port auto-detect + handshake) until it works or
+// the timeout expires. The monitor loop keeps running meanwhile (its ticks
+// just back off while disconnected) and resumes on its own once back.
+func (a *App) waitReconnectAfterReboot(timeout time.Duration) error {
+	_ = a.Disconnect()
+	deadline := time.Now().Add(timeout)
+	for {
+		if err := a.Connect(""); err == nil {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("minitela não voltou após o reboot (use Reconectar)")
+		}
+		time.Sleep(3 * time.Second)
+	}
+}
+
 // UploadGifFile flashes a pre-built .acf (from a user-selected image) onto the
 // Imagem page (texture_gif). progress, when non-nil, receives a 0-100 integer.
 func (a *App) UploadGifFile(fileBytes []byte) error {
@@ -913,7 +933,24 @@ func (a *App) UploadGifFile(fileBytes []byte) error {
 	if len(fileBytes) == 0 {
 		return fmt.Errorf("arquivo vazio")
 	}
-	return c.UploadFile(fileBytes, minitela.FileTypeTextureGif, nil)
+	if err := c.UploadFile(fileBytes, minitela.FileTypeTextureGif, nil); err != nil {
+		return err
+	}
+	// Show the Imagem page. If the flash rebooted the device (link down),
+	// reconnect first like the theme upload does.
+	if err := c.SetPage(int32(PageImagem)); err != nil {
+		if rerr := a.waitReconnectAfterReboot(90 * time.Second); rerr != nil {
+			return fmt.Errorf("imagem enviada. %w", rerr)
+		}
+		c2, err := a.get()
+		if err != nil {
+			return fmt.Errorf("imagem enviada, mas sem conexão para exibir: %w", err)
+		}
+		if err := c2.SetPage(int32(PageImagem)); err != nil {
+			return fmt.Errorf("imagem enviada, mas falha ao exibir: %w", err)
+		}
+	}
+	return nil
 }
 
 // UploadGifFromPath reads an .acf file from disk and flashes it to the Imagem
@@ -953,7 +990,21 @@ func (a *App) RestoreTheme() error {
 	if err != nil {
 		return err
 	}
-	return a.RestoreThemeFromPath(path)
+	if err := a.RestoreThemeFromPath(path); err != nil {
+		return err
+	}
+	// The device is back on the stock theme: drop the customized work base so
+	// the next image upload starts from the factory zip again instead of
+	// resurrecting old custom GIFs. Best effort: if the install source is
+	// gone the base will be recopied on demand; if it can't be, keep the
+	// current base rather than failing.
+	_ = os.Remove(filepath.Join(workArea(), "Zip", "file.zip"))
+	// The flash reboots the device (link down): reconnect; Connect itself
+	// lands back on the Monitor page.
+	if err := a.waitReconnectAfterReboot(90 * time.Second); err != nil {
+		return fmt.Errorf("tema restaurado. %w", err)
+	}
+	return nil
 }
 
 // UploadImageToTheme converts the provided image bytes to a 192x192 GIF,
@@ -1000,6 +1051,25 @@ func (a *App) UploadImageToTheme(fileBytes []byte, imagePage int) error {
 	}
 	if err := c.UploadFile(acf, minitela.FileTypeTexture, nil); err != nil {
 		return fmt.Errorf("upload do tema: %w", err)
+	}
+	// From now on the generated zip (with this slot embedded) becomes the
+	// base for the next upload, so the other slots keep their images instead
+	// of reverting to the factory theme. Persist before the reboot wait so a
+	// killed app never loses the accumulation.
+	if err := persistThemeBase(work, zipPath); err != nil {
+		return fmt.Errorf("tema enviado, mas falha ao atualizar a base local: %w", err)
+	}
+	// The flash reboots the device into the WhatsApp page and drops the
+	// serial link: reconnect, then show the slot that was just uploaded.
+	if err := a.waitReconnectAfterReboot(90 * time.Second); err != nil {
+		return fmt.Errorf("tema enviado. %w", err)
+	}
+	c2, err := a.get()
+	if err != nil {
+		return fmt.Errorf("tema enviado, mas sem conexão para exibir a imagem: %w", err)
+	}
+	if err := c2.SetPage(int32(4 + imagePage)); err != nil {
+		return fmt.Errorf("tema enviado, mas falha ao exibir a Imagem %d: %w", imagePage, err)
 	}
 	return nil
 }
