@@ -1053,8 +1053,13 @@ func executeCheck(python string) (string, error) {
 
 // findStockThemeAcf returns the path to the stock theme blob inside the
 // Positivo MiniTela install folder (checked against the known candidates).
+// It uses ideUtilsBase so any installed Store version is found, not just the
+// version that was current when the path was first hardcoded.
 func findStockThemeAcf() (string, error) {
-	base := "C:\\Program Files\\WindowsApps\\PositivoInformticaS.A.PositivoMinitela_1.0.43.0_x64__6yhrh9dmgepzj\\MiniTelaApp\\assets\\minipanel\\resources\\IDE_utils_pt"
+	base := ideUtilsBase()
+	if base == "" {
+		return "", fmt.Errorf("não foi possível localizar o .acf de tema na instalação")
+	}
 	candidates := []string{
 		base + "\\ACF\\ConfigData&Texture.acf",
 		base + "\\ACF\\Texture.acf",

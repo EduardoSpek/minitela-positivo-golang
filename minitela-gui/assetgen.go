@@ -27,11 +27,31 @@ var themeGifs = []GifFile{
 }
 
 // ideUtilsBase returns the base folder of the installed Positivo IDE_utils_pt
-// that holds Gen/ and Zip/file.zip.
+// that holds Gen/ and Zip/file.zip. It scans WindowsApps for any installed
+// PositivoMinitela_* version (the Store updates the folder name on every app
+// update, so a fixed version string breaks), keeping the last known path as a
+// fallback candidate.
 func ideUtilsBase() string {
-	for _, p := range []string{
+	candidates := []string{}
+	entries, err := os.ReadDir(`C:\Program Files\WindowsApps`)
+	if err == nil {
+		for _, e := range entries {
+			if !e.IsDir() {
+				continue
+			}
+			name := e.Name()
+			if !strings.HasPrefix(name, "PositivoInformticaS.A.PositivoMinitela_") {
+				continue
+			}
+			candidates = append(candidates, filepath.Join(`C:\Program Files\WindowsApps`, name,
+				`MiniTelaApp`, `assets`, `minipanel`, `resources`, `IDE_utils_pt`))
+		}
+	}
+	// Last resort: the last known fixed path (kept for reference).
+	candidates = append(candidates,
 		`C:\Program Files\WindowsApps\PositivoInformticaS.A.PositivoMinitela_1.0.43.0_x64__6yhrh9dmgepzj\MiniTelaApp\assets\minipanel\resources\IDE_utils_pt`,
-	} {
+	)
+	for _, p := range candidates {
 		if _, err := os.Stat(filepath.Join(p, "Gen", "AHMISimGenDemo_og.exe")); err == nil {
 			return p
 		}
@@ -53,26 +73,35 @@ func workArea() string {
 
 // prepareWorkArea copies Gen/ and file.zip from the install into a writable
 // area so the generator exe can run (the WindowsApps install is read-only).
+// If the install is gone (uninstalled/updated) but the work area already has
+// Gen/ and file.zip from a previous run, it proceeds with those copies.
 func prepareWorkArea() (string, error) {
 	src := ideUtilsBase()
-	if src == "" {
-		return "", fmt.Errorf("instalação IDE_utils_pt não localizada")
-	}
 	work := workArea()
+	genDst := filepath.Join(work, "Gen")
+	genExe := filepath.Join(genDst, "AHMISimGenDemo_og.exe")
+	zipDst := filepath.Join(work, "Zip", "file.zip")
+	if src == "" {
+		if _, err := os.Stat(genExe); err != nil {
+			return "", fmt.Errorf("instalação IDE_utils_pt não localizada")
+		}
+		if _, err := os.Stat(zipDst); err != nil {
+			return "", fmt.Errorf("instalação IDE_utils_pt não localizada")
+		}
+		return work, nil
+	}
 	if err := os.MkdirAll(filepath.Join(work, "Gen"), 0o755); err != nil {
 		return "", err
 	}
 	// copy Gen/ recursively if missing or stale
 	genSrc := filepath.Join(src, "Gen")
-	genDst := filepath.Join(work, "Gen")
-	if _, err := os.Stat(filepath.Join(genDst, "AHMISimGenDemo_og.exe")); err != nil {
+	if _, err := os.Stat(genExe); err != nil {
 		if err := copyDir(genSrc, genDst); err != nil {
 			return "", err
 		}
 	}
 	// copy file.zip if missing
 	zipSrc := filepath.Join(src, "Zip", "file.zip")
-	zipDst := filepath.Join(work, "Zip", "file.zip")
 	if _, err := os.Stat(zipDst); err != nil {
 		if err := os.MkdirAll(filepath.Dir(zipDst), 0o755); err != nil {
 			return "", err
