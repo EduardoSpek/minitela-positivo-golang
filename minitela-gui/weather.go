@@ -163,6 +163,7 @@ func (a *App) refreshWeather(cfg weatherConfig) {
 	}
 	a.weatherMu.Lock()
 	a.weatherLast = days
+	a.weatherFetchedAt = time.Now()
 	a.weatherMu.Unlock()
 	runtimeEmit(a.ctx, "weather", a.weatherPayload())
 }
@@ -200,9 +201,13 @@ func (a *App) weatherPayload() map[string]interface{} {
 }
 
 // fetchForecast returns the next 5 days (today included) from Open-Meteo.
+// Day 0 reflects the CURRENT conditions (current weather_code/temperature):
+// the daily weather_code is the day's dominant (most severe) condition, which
+// shows rain all day when only a brief shower is expected while it is sunny
+// now. Days 1+ keep the daily forecast values.
 func fetchForecast(lat, lon float64) ([]DayForecast, error) {
 	url := fmt.Sprintf(
-		"https://api.open-meteo.com/v1/forecast?latitude=%s&longitude=%s&daily=weather_code,temperature_2m_max,temperature_2m_min,temperature_2m_mean&timezone=auto&forecast_days=5",
+		"https://api.open-meteo.com/v1/forecast?latitude=%s&longitude=%s&current=weather_code,temperature_2m&daily=weather_code,temperature_2m_max,temperature_2m_min,temperature_2m_mean&timezone=auto&forecast_days=5",
 		strconv.FormatFloat(lat, 'g', -1, 64),
 		strconv.FormatFloat(lon, 'g', -1, 64),
 	)
@@ -221,6 +226,10 @@ func fetchForecast(lat, lon float64) ([]DayForecast, error) {
 		return nil, fmt.Errorf("previsão retornou HTTP %d", resp.StatusCode)
 	}
 	var out struct {
+		Current struct {
+			WeatherCode *int     `json:"weather_code"`
+			Temp        *float64 `json:"temperature_2m"`
+		} `json:"current"`
 		Daily struct {
 			Time      []string  `json:"time"`
 			Weather   []int     `json:"weather_code"`
@@ -263,11 +272,23 @@ func fetchForecast(lat, lon float64) ([]DayForecast, error) {
 		}
 		date := af.Time[i]
 		t, _ := time.Parse("2006-01-02", date)
+		// Day 0 shows the current conditions; the daily values stay as the
+		// min/max range. If the API omits the current block, fall back to
+		// the daily values (previous behavior).
+		wmoNow, tempNow := wmo, tavg
+		if i == 0 {
+			if out.Current.WeatherCode != nil {
+				wmoNow = *out.Current.WeatherCode
+			}
+			if out.Current.Temp != nil {
+				tempNow = int(*out.Current.Temp)
+			}
+		}
 		days = append(days, DayForecast{
 			Date:         date,
-			WMO:          wmo,
+			WMO:          wmoNow,
 			IsDay:        dayFactor,
-			Temp:         tavg,
+			Temp:         tempNow,
 			TempMin:      tmin,
 			TempMax:      tmax,
 			Weekday:      weekdayShort(t),

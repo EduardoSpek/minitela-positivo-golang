@@ -48,8 +48,9 @@ type App struct {
 	notes   [3]note
 
 	// weather state for the Clima screen
-	weatherMu   sync.Mutex
-	weatherLast []DayForecast
+	weatherMu        sync.Mutex
+	weatherLast      []DayForecast
+	weatherFetchedAt time.Time
 
 	// daily preset (Agenda) tracking: last fired HH:MM per rule index
 	schedMu   sync.Mutex
@@ -746,14 +747,20 @@ func pushWeatherTags(c *minitela.Client, a *App) error {
 	return nil
 }
 
+// weatherTTL is how long a cached forecast is served before a refresh.
+// Without it the Clima screen would freeze on the first fetch for as long as
+// the app runs.
+const weatherTTL = 30 * time.Minute
+
 // ensureWeather returns the most recent forecast plus the saved config,
-// triggering a refresh when the cache is empty.
+// triggering a refresh when the cache is empty or older than weatherTTL.
 func (a *App) ensureWeather() ([]DayForecast, weatherConfig, error) {
 	cfg := loadWeatherConfig()
 	a.weatherMu.Lock()
 	days := a.weatherLast
+	stale := len(days) == 0 || time.Since(a.weatherFetchedAt) >= weatherTTL
 	a.weatherMu.Unlock()
-	if len(days) > 0 {
+	if !stale {
 		return days, cfg, nil
 	}
 	if cfg.Lat == 0 && cfg.Lon == 0 {
