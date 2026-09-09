@@ -21,13 +21,16 @@ type weatherConfig struct {
 
 // DayForecast is one day of the Open-Meteo daily forecast.
 type DayForecast struct {
-	Date      string // "2024-10-28"
-	WMO       int
-	IsDay     bool
-	Temp      int
-	TempMin   int
-	TempMax   int
-	Weekday   string // short PT-BR label, e.g. "SEG"
+	Date    string // "2024-10-28"
+	WMO     int
+	IsDay   bool
+	Temp    int
+	TempMin int
+	TempMax int
+	// PrecipMM is the expected liquid volume (rain + showers, mm) for the
+	// day. Used to decide whether light drizzle reads as "partly cloudy".
+	PrecipMM    float64
+	Weekday     string // short PT-BR label, e.g. "SEG"
 	WeekdayFull string
 }
 
@@ -185,15 +188,15 @@ func (a *App) weatherPayload() map[string]interface{} {
 	arr := make([]interface{}, 0, len(days))
 	for _, d := range days {
 		arr = append(arr, map[string]interface{}{
-			"date":        d.Date,
-			"weekday":     d.Weekday,
-			"wmo":         d.WMO,
-			"day":         d.IsDay,
-			"temp":        d.Temp,
-			"tempMin":     d.TempMin,
-			"tempMax":     d.TempMax,
-			"icon":        wmoToIcon(d.WMO, d.IsDay),
-			"condition":   wmoLabel(d.WMO),
+			"date":      d.Date,
+			"weekday":   d.Weekday,
+			"wmo":       d.WMO,
+			"day":       d.IsDay,
+			"temp":      d.Temp,
+			"tempMin":   d.TempMin,
+			"tempMax":   d.TempMax,
+			"icon":      wmoToIcon(d.WMO, d.IsDay),
+			"condition": wmoLabel(d.WMO),
 		})
 	}
 	out["days"] = arr
@@ -207,7 +210,7 @@ func (a *App) weatherPayload() map[string]interface{} {
 // now. Days 1+ keep the daily forecast values.
 func fetchForecast(lat, lon float64) ([]DayForecast, error) {
 	url := fmt.Sprintf(
-		"https://api.open-meteo.com/v1/forecast?latitude=%s&longitude=%s&current=weather_code,temperature_2m&daily=weather_code,temperature_2m_max,temperature_2m_min,temperature_2m_mean&timezone=auto&forecast_days=5",
+		"https://api.open-meteo.com/v1/forecast?latitude=%s&longitude=%s&current=weather_code,temperature_2m&daily=weather_code,temperature_2m_max,temperature_2m_min,temperature_2m_mean,rain_sum,showers_sum&timezone=auto&forecast_days=5",
 		strconv.FormatFloat(lat, 'g', -1, 64),
 		strconv.FormatFloat(lon, 'g', -1, 64),
 	)
@@ -231,11 +234,13 @@ func fetchForecast(lat, lon float64) ([]DayForecast, error) {
 			Temp        *float64 `json:"temperature_2m"`
 		} `json:"current"`
 		Daily struct {
-			Time      []string  `json:"time"`
-			Weather   []int     `json:"weather_code"`
-			TempMax   []float64 `json:"temperature_2m_max"`
-			TempMin   []float64 `json:"temperature_2m_min"`
-			TempAvg   []float64 `json:"temperature_2m_mean"`
+			Time    []string  `json:"time"`
+			Weather []int     `json:"weather_code"`
+			TempMax []float64 `json:"temperature_2m_max"`
+			TempMin []float64 `json:"temperature_2m_min"`
+			TempAvg []float64 `json:"temperature_2m_mean"`
+			RainSum []float64 `json:"rain_sum"`
+			Showers []float64 `json:"showers_sum"`
 		} `json:"daily"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
@@ -265,6 +270,13 @@ func fetchForecast(lat, lon float64) ([]DayForecast, error) {
 		if i < len(af.TempAvg) {
 			tavg = int(af.TempAvg[i])
 		}
+		var precip float64
+		if i < len(af.RainSum) {
+			precip += af.RainSum[i]
+		}
+		if i < len(af.Showers) {
+			precip += af.Showers[i]
+		}
 		// today uses the actual time-of-day factor; future days default to day.
 		dayFactor := isDay
 		if i > 0 {
@@ -283,18 +295,41 @@ func fetchForecast(lat, lon float64) ([]DayForecast, error) {
 			if out.Current.Temp != nil {
 				tempNow = int(*out.Current.Temp)
 			}
+		} else {
+			// Future days: light liquid drizzle reads as partly cloudy
+			// (Windows-Weather-like), so a 28° day with passing drizzle
+			// does not show the rain glyph all day.
+			wmoNow = drizzleDisplayWMO(wmo, precip)
 		}
 		days = append(days, DayForecast{
-			Date:         date,
-			WMO:          wmoNow,
-			IsDay:        dayFactor,
-			Temp:         tempNow,
-			TempMin:      tmin,
-			TempMax:      tmax,
-			Weekday:      weekdayShort(t),
+			Date:     date,
+			WMO:      wmoNow,
+			IsDay:    dayFactor,
+			Temp:     tempNow,
+			TempMin:  tmin,
+			TempMax:  tmax,
+			PrecipMM: precip,
+			Weekday:  weekdayShort(t),
 		})
 	}
 	return days, nil
+}
+
+// drizzleDowngradeMM is the max expected liquid volume (rain + showers, mm)
+// for light drizzle (WMO 51/53/55) to be displayed as partly cloudy instead
+// of rain on future days. Genuine rain (heavier codes, or drizzle >= this)
+// keeps the rain glyph. Tunable.
+const drizzleDowngradeMM = 5.0
+
+// drizzleDisplayWMO maps a future day's WMO code to its display code: light
+// liquid drizzle with a small expected volume reads as partly cloudy (2),
+// matching how such days look (and how other forecast apps render them).
+// Everything else passes through unchanged.
+func drizzleDisplayWMO(wmo int, precipMM float64) int {
+	if (wmo == 51 || wmo == 53 || wmo == 55) && precipMM < drizzleDowngradeMM {
+		return 2
+	}
+	return wmo
 }
 
 // wmoToIcon maps an Open-Meteo WMO weather code to the theme's condition
