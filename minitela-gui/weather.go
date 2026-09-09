@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -75,7 +76,7 @@ func (a *App) GetWeatherConfig() map[string]interface{} {
 	cfg := loadWeatherConfig()
 	return map[string]interface{}{
 		"city":      cfg.City,
-		"placeName": cfg.PlaceName,
+		"placeName": shortCityName(cfg.PlaceName),
 	}
 }
 
@@ -151,11 +152,22 @@ func geocodeCity(name string) (geoResult, error) {
 		return geoResult{}, fmt.Errorf("cidade não encontrada: %s", name)
 	}
 	r := out.Results[0]
-	display := r.Name
-	if r.Country != "" {
-		display = r.Name + ", " + r.Country
+	// Keep only the short place name ("Salvador", not "Salvador, Brasil"):
+	// the Clima screen's city widget is narrow and longer labels run off
+	// the display.
+	return geoResult{Lat: r.Latitude, Lon: r.Longitude, DisplayName: shortCityName(r.Name)}, nil
+}
+
+// shortCityName returns the part before the first comma ("Salvador, Brasil"
+// -> "Salvador"), so city labels fit the mini screen. Empty input stays empty.
+func shortCityName(s string) string {
+	for i := 0; i < len(s); i++ {
+		if s[i] == ',' {
+			s = s[:i]
+			break
+		}
 	}
-	return geoResult{Lat: r.Latitude, Lon: r.Longitude, DisplayName: display}, nil
+	return strings.TrimSpace(s)
 }
 
 // refreshWeather fetches the 5-day forecast and stores it for pushWeatherTags.
@@ -179,7 +191,7 @@ func (a *App) weatherPayload() map[string]interface{} {
 	a.weatherMu.Unlock()
 	out := map[string]interface{}{
 		"city":      cfg.City,
-		"placeName": cfg.PlaceName,
+		"placeName": shortCityName(cfg.PlaceName),
 		"days":      []interface{}{},
 	}
 	if len(days) == 0 {

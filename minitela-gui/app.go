@@ -716,6 +716,7 @@ func pushWeatherTags(c *minitela.Client, a *App) error {
 	if display == "" {
 		display = cfg.City
 	}
+	display = shortCityName(display)
 	if err := c.SetStringTag(minitela.RegCity, truncateASCII(display, 32)); err != nil {
 		return err
 	}
