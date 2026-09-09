@@ -214,7 +214,9 @@ func (a *App) SetPage(page int) error {
 }
 
 // nextPage advances the mini screen to the next page, skipping the disabled
-// WhatsApp page: Notas(2)->Monitor(3)->Clima(4)->Imagem(5)->Notas(2).
+// WhatsApp page. On the Imagem screen it first cycles through the three
+// image slots (Gif1=5 -> Gif2=6 -> Gif3=7) before wrapping back to Notas:
+// Notas(2)->Monitor(3)->Clima(4)->Gif1(5)->Gif2(6)->Gif3(7)->Notas(2).
 // Called by the global keyboard hook when the dedicated notebook key is pressed.
 func (a *App) nextPage() {
 	c, err := a.get()
@@ -225,11 +227,19 @@ func (a *App) nextPage() {
 	if err != nil {
 		cur = 0
 	}
-	if cur < PageNotas || cur > PageImagem {
-		cur = PageNotas - 1
-	}
-	next := cur + 1
-	if next > PageImagem {
+	var next int32
+	switch {
+	case cur >= 5 && cur < 7:
+		// On an image slot: advance to the next image before leaving.
+		next = cur + 1
+	case cur == 7:
+		// Last image slot: wrap back to Notas.
+		next = PageNotas
+	case cur >= PageNotas && cur < PageImagem:
+		next = cur + 1
+	default:
+		// Out of range (e.g. WhatsApp) or read failure: go to Notas.
+		// Note PageImagem(5) is covered by the image-slot case above.
 		next = PageNotas
 	}
 	_ = c.SetPage(next)

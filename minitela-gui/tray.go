@@ -289,12 +289,13 @@ func trayWndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 const (
 	cmdShow      = 1001
 	cmdB100      = 1002
-	cmdB60       = 1003
+	cmdB2        = 1003
 	cmdB30       = 1004
 	cmdB0        = 1005
 	cmdMonitor   = 1006
 	cmdAutostart = 1007
 	cmdQuit      = 1008
+	cmdB1        = 1009
 )
 
 func handleTrayCommand(id uint32) {
@@ -307,13 +308,17 @@ func handleTrayCommand(id uint32) {
 		if trayCB != nil && trayCB.SetBlight != nil {
 			trayCB.SetBlight(100)
 		}
-	case cmdB60:
+	case cmdB2:
 		if trayCB != nil && trayCB.SetBlight != nil {
-			trayCB.SetBlight(60)
+			trayCB.SetBlight(2)
 		}
 	case cmdB30:
 		if trayCB != nil && trayCB.SetBlight != nil {
 			trayCB.SetBlight(30)
+		}
+	case cmdB1:
+		if trayCB != nil && trayCB.SetBlight != nil {
+			trayCB.SetBlight(1)
 		}
 	case cmdB0:
 		if trayCB != nil && trayCB.SetBlight != nil {
@@ -351,9 +356,10 @@ func showTrayMenu() {
 	must(cmdShow, "Mostrar janela", true)
 	procAppendMenu.Call(menu, MF_SEPARATOR, 0, 0)
 	must(cmdB100, "Brilho 100%", false)
-	must(cmdB60, "Brilho 60%", false)
 	must(cmdB30, "Brilho 30%", false)
-	must(cmdB0, "Desligar (0%)", false)
+	must(cmdB2, "Brilho 2%", false)
+	must(cmdB1, "Brilho 1%", false)
+	must(cmdB0, "Desligado", false)
 	procAppendMenu.Call(menu, MF_SEPARATOR, 0, 0)
 	as := "Iniciar com o Windows"
 	if IsAutoStartEnabled() {
