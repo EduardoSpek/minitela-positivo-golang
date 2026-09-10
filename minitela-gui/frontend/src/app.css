@@ -621,7 +621,7 @@ input[type="range"]::-webkit-slider-thumb {
 .schedule-list { display: grid; gap: 12px; }
 .sched-row {
     display: grid;
-    grid-template-columns: auto 90px 1fr 170px auto;
+    grid-template-columns: auto 90px 90px 1fr 170px auto;
     gap: 10px;
     align-items: center;
     padding: 12px 14px;
@@ -640,7 +640,7 @@ input[type="range"]::-webkit-slider-thumb {
     border-radius: 10px;
     font-size: 14px;
 }
-.sched-row .sched-time { font-variant-numeric: tabular-nums; }
+.sched-row input[type="time"] { font-variant-numeric: tabular-nums; }
 .sched-bright {
     display: flex;
     align-items: center;

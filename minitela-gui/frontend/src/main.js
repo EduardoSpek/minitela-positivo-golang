@@ -303,7 +303,8 @@ function scheduleRowHTML(r, i) {
     return `
         <div class="sched-row" data-i="${i}">
             <button class="switch ${r.enabled ? 'on' : ''}" role="switch" aria-checked="${r.enabled ? 'true' : 'false'}"></button>
-            <input type="time" class="sched-time" value="${r.time || ''}"/>
+            <input type="time" class="sched-start" value="${r.start || ''}"/>
+            <input type="time" class="sched-end" value="${r.end || ''}"/>
             <select class="sched-page">${pageOpts}</select>
             <div class="sched-bright">
                 <input type="range" min="0" max="100" value="${r.brightness}" class="sched-brightness"/>
@@ -316,7 +317,7 @@ function scheduleRowHTML(r, i) {
 function renderSchedule() {
     const wrap = $('scheduleList');
     if (!scheduleRules.length) {
-        wrap.innerHTML = '<div class="sched-empty">Nenhum horário configurado. Clique em "Adicionar horário" para criar um.</div>';
+        wrap.innerHTML = '<div class="sched-empty">Nenhuma janela configurada. Clique em "Adicionar janela" para criar uma.</div>';
         return;
     }
     wrap.innerHTML = scheduleRules.map(scheduleRowHTML).join('');
@@ -327,8 +328,11 @@ function renderSchedule() {
             scheduleRules[i].enabled = !scheduleRules[i].enabled;
             renderSchedule();
         });
-        row.querySelector('.sched-time').addEventListener('change', (e) => {
-            scheduleRules[i].time = e.target.value;
+        row.querySelector('.sched-start').addEventListener('change', (e) => {
+            scheduleRules[i].start = e.target.value;
+        });
+        row.querySelector('.sched-end').addEventListener('change', (e) => {
+            scheduleRules[i].end = e.target.value;
         });
         row.querySelector('.sched-page').addEventListener('change', (e) => {
             scheduleRules[i].page = Number(e.target.value);
@@ -350,7 +354,8 @@ async function loadScheduleView() {
         if (!Array.isArray(scheduleRules)) scheduleRules = [];
         scheduleRules = scheduleRules.map((r) => ({
             enabled: !!r.enabled,
-            time: r.time || '',
+            start: r.start || '',
+            end: r.end || '',
             page: r.page || 3,
             brightness: r.brightness == null ? 60 : r.brightness,
         }));
@@ -359,15 +364,15 @@ async function loadScheduleView() {
 }
 
 $('btnAddRule').addEventListener('click', () => {
-    scheduleRules.push({ enabled: true, time: '12:00', page: 3, brightness: 60 });
+    scheduleRules.push({ enabled: true, start: '13:00', end: '18:00', page: 3, brightness: 10 });
     renderSchedule();
 });
 
 $('btnSaveSchedules').addEventListener('click', async () => {
     try {
         const valid = scheduleRules
-            .filter((r) => /^\d{2}:\d{2}$/.test(r.time || ''))
-            .map((r) => ({ enabled: r.enabled, time: r.time, page: r.page, brightness: r.brightness }));
+            .filter((r) => /^\d{2}:\d{2}$/.test(r.start || '') && /^\d{2}:\d{2}$/.test(r.end || ''))
+            .map((r) => ({ enabled: r.enabled, start: r.start, end: r.end, page: r.page, brightness: r.brightness }));
         await SetSchedules(valid);
         scheduleRules = valid;
         renderSchedule();
@@ -378,8 +383,8 @@ $('btnSaveSchedules').addEventListener('click', async () => {
 });
 
 EventsOn('schedule-run', (d) => {
-    if (d && d.time) {
-        toast(`Agenda ${d.time}: ${d.page} · brilho ${d.brightness}%`);
+    if (d && d.start) {
+        toast(`Agenda ${d.start}–${d.end}: ${d.page} · brilho ${d.brightness}%`);
     }
 });
 

@@ -52,9 +52,12 @@ type App struct {
 	weatherLast      []DayForecast
 	weatherFetchedAt time.Time
 
-	// daily preset (Agenda) tracking: last fired HH:MM per rule index
-	schedMu   sync.Mutex
-	schedLast map[int]string
+	// daily preset (Agenda) tracking: active window rule index (-1 = none),
+	// last applied brightness, and last enforcement check
+	schedMu        sync.Mutex
+	schedActive    int
+	schedApplied   int
+	schedLastCheck time.Time
 }
 
 // note holds a scheduled reminder for the Notas screen. Text is the message;
@@ -70,7 +73,7 @@ type note struct {
 
 // NewApp creates a new App application struct
 func NewApp() *App {
-	return &App{}
+	return &App{schedActive: -1}
 }
 
 func (a *App) startup(ctx context.Context) {
