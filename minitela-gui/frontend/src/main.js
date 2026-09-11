@@ -2,7 +2,7 @@ import './style.css';
 import './app.css';
 import {
     Connect, Disconnect, IsConnected,
-    SetBacklight, WriteText, SetDateTime,
+    SetBacklight, WriteText,
     StartMonitor, StopMonitor, GetSystemStats,
     GoToPage, GoToImageSlot, SetNotes, GetNotes,
     GetSchedules, SetSchedules,
@@ -133,16 +133,6 @@ $('btnSend').addEventListener('click', async () => {
         await WriteText(currentText, currentBacklight);
         setPreview(currentText);
         toast('Texto enviado');
-    } catch (e) {
-        toast('Falha: ' + String(e), 'err');
-    }
-});
-
-$('btnSendDate').addEventListener('click', async () => {
-    if (!connected) { tryConnect(); }
-    try {
-        const r = await SetDateTime();
-        toast('Data/hora enviadas');
     } catch (e) {
         toast('Falha: ' + String(e), 'err');
     }
