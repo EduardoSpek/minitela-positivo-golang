@@ -4,7 +4,8 @@ import {
     Connect, Disconnect, IsConnected,
     SetBacklight, WriteText,
     StartMonitor, StopMonitor, GetSystemStats,
-    GoToPage, GoToImageSlot, SetNotes, GetNotes,
+    GoToPage, GoToImageSlot,
+    GetNoteRules, SetNoteRules,
     GetSchedules, SetSchedules,
     GetWeatherConfig, SetWeatherConfig,
     AutoStartEnabled, SetAutoStartEnabled, CreateShortcut,
@@ -253,34 +254,88 @@ function bindPageSelectors() {
     });
 }
 
-// ---- notas (3 lembretes: texto + data/hora de disparo) ----
+// ---- notas (3 lembretes: texto + repetição uma vez / todo dia / semanal) ----
+function noteModeEls(i) {
+    return {
+        text: $('note' + i + 'Text'),
+        mode: $('note' + i + 'Mode'),
+        once: $('note' + i + 'Once'),
+        time: $('note' + i + 'Time'),
+        week: $('note' + i + 'Week'),
+    };
+}
+
+function weekdayMaskFromWeek(weekEl) {
+    let mask = 0;
+    weekEl.querySelectorAll('.day-btn').forEach((b) => {
+        if (b.classList.contains('on')) mask |= 1 << Number(b.dataset.day);
+    });
+    return mask;
+}
+
+function setWeekMask(weekEl, mask) {
+    weekEl.querySelectorAll('.day-btn').forEach((b) => {
+        b.classList.toggle('on', (mask & (1 << Number(b.dataset.day))) !== 0);
+    });
+}
+
+function applyNoteMode(i) {
+    const el = noteModeEls(i);
+    const mode = el.mode.value;
+    el.once.style.display = mode === 'once' ? '' : 'none';
+    el.time.style.display = mode === 'once' ? 'none' : '';
+    el.week.style.display = mode === 'weekly' ? '' : 'none';
+}
+
 async function loadNotesView() {
+    for (let i = 1; i <= 3; i++) applyNoteMode(i);
     try {
-        const saved = await GetNotes();
-        const ids = ['note1Text', 'note1Time', 'note2Text', 'note2Time', 'note3Text', 'note3Time'];
+        const saved = await GetNoteRules();
+        if (!Array.isArray(saved)) return;
         for (let i = 0; i < saved.length && i < 3; i++) {
-            if (saved[i][0] != null) $(ids[i * 2]).value = saved[i][0];
-            if (saved[i][1] != null) $(ids[i * 2 + 1]).value = saved[i][1];
+            const r = saved[i];
+            const el = noteModeEls(i + 1);
+            el.text.value = r.text || '';
+            el.mode.value = r.mode || 'once';
+            el.once.value = r.onceAt || '';
+            el.time.value = r.time || '';
+            setWeekMask(el.week, r.weekdayBit || 0);
+            applyNoteMode(i + 1);
         }
     } catch (e) { /* ignore */ }
 }
-function collectNotes() {
-    return [
-        [$('note1Text').value, $('note1Time').value],
-        [$('note2Text').value, $('note2Time').value],
-        [$('note3Text').value, $('note3Time').value],
-    ];
-}
+
 $('btnSaveNotes').addEventListener('click', async () => {
     if (!connected) { tryConnect(); }
     try {
-        const [n1, n2, n3] = collectNotes();
-        await SetNotes(n1[0], n1[1], n2[0], n2[1], n3[0], n3[1]);
-        toast('Notas salvas (disparam e mudam a tela para Notas quando chegar a data/hora)');
+        const rules = [];
+        for (let i = 1; i <= 3; i++) {
+            const el = noteModeEls(i);
+            const mode = el.mode.value;
+            rules.push({
+                text: el.text.value,
+                mode: mode,
+                onceAt: mode === 'once' ? el.once.value : '',
+                time: mode === 'once' ? '' : el.time.value,
+                weekdayBit: mode === 'weekly' ? weekdayMaskFromWeek(el.week) : 0,
+            });
+        }
+        await SetNoteRules(rules);
+        toast('Notas salvas (disparam e mudam a tela para Notas; o texto fica até você trocar de tela)');
     } catch (e) {
         toast('Falha: ' + String(e), 'err');
     }
 });
+
+for (let i = 1; i <= 3; i++) {
+    (function (idx) {
+        const el = noteModeEls(idx);
+        el.mode.addEventListener('change', () => applyNoteMode(idx));
+        el.week.querySelectorAll('.day-btn').forEach((b) => {
+            b.addEventListener('click', () => b.classList.toggle('on'));
+        });
+    })(i);
+}
 
 // ---- agenda (pré-definições diárias: horário -> tela + brilho) ----
 const SCHED_PAGES = { 2: 'Notas', 3: 'Monitor', 4: 'Clima', 5: 'Imagem' };

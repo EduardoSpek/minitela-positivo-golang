@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -58,17 +57,6 @@ type App struct {
 	schedActive    int
 	schedApplied   int
 	schedLastCheck time.Time
-}
-
-// note holds a scheduled reminder for the Notas screen. Text is the message;
-// At is the day/time the mini screen flips to Notas. Once At passes, Fired
-// becomes true and FiredAt records the moment the notice was shown (the screen
-// displays that time, not the scheduled one).
-type note struct {
-	Text    string
-	At      time.Time
-	Fired   bool
-	FiredAt time.Time
 }
 
 // NewApp creates a new App application struct
@@ -267,92 +255,6 @@ func (a *App) GoToImageSlot(slot int) error {
 		return fmt.Errorf("slot de imagem inválido: %d (use 1..3)", slot)
 	}
 	return a.SetPage(4 + slot)
-}
-
-// parseNoteDue parses a datetime-local value ("2006-01-02T15:04") into a
-// reminder schedule. Empty/invalid values return the zero time (no schedule).
-func parseNoteDue(s string) time.Time {
-	for _, layout := range []string{"2006-01-02T15:04"} {
-		if t, err := time.ParseInLocation(layout, s, time.Local); err == nil {
-			return t
-		}
-	}
-	return time.Time{}
-}
-
-// noteFileJSON is the on-disk shape of the three reminders.
-type notesConfig struct {
-	Notes [3]note `json:"notes"`
-}
-
-func notesConfigPath() (string, error) {
-	dir, err := os.UserConfigDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(dir, "minitela-gui.exe", "notes.json"), nil
-}
-
-func loadNotesConfig() [3]note {
-	var cfg notesConfig
-	p, err := notesConfigPath()
-	if err != nil {
-		return cfg.Notes
-	}
-	b, err := os.ReadFile(p)
-	if err == nil {
-		_ = json.Unmarshal(b, &cfg)
-	}
-	return cfg.Notes
-}
-
-func saveNotesConfig(notes [3]note) error {
-	p, err := notesConfigPath()
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-		return err
-	}
-	b, err := json.MarshalIndent(notesConfig{Notes: notes}, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(p, b, 0o600)
-}
-
-// SetNotes stores the three reminders (text + schedule) for the Notas screen.
-// t1..t3 are datetime-local values ("2006-01-02T15:04"); an empty value keeps
-// the reminder text but disables its automatic flip to the Notas page.
-func (a *App) SetNotes(n1, t1, n2, t2, n3, t3 string) error {
-	a.notesMu.Lock()
-	a.notes[0] = note{Text: n1, At: parseNoteDue(t1)}
-	a.notes[1] = note{Text: n2, At: parseNoteDue(t2)}
-	a.notes[2] = note{Text: n3, At: parseNoteDue(t3)}
-	_ = saveNotesConfig(a.notes)
-	a.notesMu.Unlock()
-	// No immediate serial write here: a burst of SET_REGISTER frames right when
-	// the user clicks "Salvar" is what made the firmware stop responding. The
-	// not-yet-fired reminders would render "Sem notas" anyway; the registers are
-	// written when a notice fires (fireDueNote) or while the monitor loop is on
-	// the Notas page.
-	return nil
-}
-
-// GetNotes returns the three reminders so the UI can prefill the saved text and
-// scheduled datetime ("2006-01-02T15:04") after an app restart.
-func (a *App) GetNotes() [][2]string {
-	a.notesMu.Lock()
-	defer a.notesMu.Unlock()
-	out := make([][2]string, 0, 3)
-	for _, n := range a.notes {
-		due := ""
-		if !n.At.IsZero() {
-			due = n.At.Format("2006-01-02T15:04")
-		}
-		out = append(out, [2]string{n.Text, due})
-	}
-	return out
 }
 
 // GetSystemStats returns the last gathered CPU/battery/WiFi info.
@@ -636,25 +538,30 @@ func pushNotesTags(c *minitela.Client, a *App) error {
 	return nil
 }
 
-// fireDueNote flips the screen to the Notas page when a scheduled reminder's
-// day/time arrives (only once). It returns true when a notice was fired so the
-// monitor loop can stop treating the flip as an error.
+// fireDueNote flips the screen to the Notas page when a reminder is due. It
+// handles one-shot ("once"), daily and weekly reminders: repeating notes fire
+// once per date (tracked by LastFiredDate) and stay displayed afterwards
+// (Fired stays true), so the text remains on the mini screen until the user
+// switches pages. It returns true when a notice was fired so the monitor loop
+// can stop treating the flip as an error.
 func fireDueNote(c *minitela.Client, a *App) (bool, error) {
 	now := time.Now()
-	var fired int = -1
+	today := now.Format("2006-01-02")
+	fired := false
 	a.notesMu.Lock()
 	for i := 0; i < 3; i++ {
 		n := a.notes[i]
-		if !n.Fired && !n.At.IsZero() && !now.Before(n.At) && n.Text != "" {
+		if noteDue(n, now) {
 			a.notes[i].Fired = true
 			a.notes[i].FiredAt = now
-			if fired < 0 {
-				fired = i
+			if n.Mode == noteModeDaily || n.Mode == noteModeWeekly {
+				a.notes[i].LastFiredDate = today
 			}
+			fired = true
 		}
 	}
 	a.notesMu.Unlock()
-	if fired < 0 {
+	if !fired {
 		return false, nil
 	}
 	// Persist the fired state so the notice survives an app restart.

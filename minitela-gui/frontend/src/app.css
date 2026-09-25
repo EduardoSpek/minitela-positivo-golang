@@ -587,6 +587,60 @@ input[type="range"]::-webkit-slider-thumb {
     font-size: 14px;
 }
 .note-row input::placeholder { color: var(--text-dim); }
+
+/* Notas: bloco por lembrete com seletor de repetição */
+.note-block {
+    display: grid;
+    gap: 8px;
+    padding: 12px;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+}
+.note-block > input[type="text"] {
+    width: 100%;
+    min-width: 0;
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    color: var(--text);
+    padding: 10px 12px;
+    border-radius: 11px;
+    font-size: 14px;
+}
+.note-block > input::placeholder { color: var(--text-dim); }
+.note-rep { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.note-rep select,
+.note-rep input[type="time"],
+.note-rep input[type="datetime-local"] {
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    color: var(--text);
+    padding: 8px 10px;
+    border-radius: 10px;
+    font-size: 14px;
+}
+.note-rep select { min-width: 150px; }
+.note-rep input[type="datetime-local"] { min-width: 210px; }
+.note-week { display: flex; gap: 4px; }
+.day-btn {
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-dim);
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.day-btn:hover { border-color: var(--accent); color: var(--text); }
+.day-btn.on {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+}
 @media (max-width: 760px) {
     .note-row { grid-template-columns: 1fr; }
 }

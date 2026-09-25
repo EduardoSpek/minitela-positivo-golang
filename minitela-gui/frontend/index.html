@@ -132,41 +132,77 @@
             <div class="topbar">
                 <div>
                     <h1 class="page-title">Notas</h1>
-                    <p class="page-dek">Configure os 3 lembretes (texto e horário) exibidos na tela de Notas da mini tela.</p>
+                    <p class="page-dek">Configure os 3 lembretes (texto e repetição) exibidos na tela de Notas da mini tela. Depois de disparar, o texto permanece até você trocar de tela.</p>
                 </div>
             </div>
 
             <div class="card">
                 <div class="card-title">Lembretes</div>
                 <div class="note-grid">
-                    <div class="note-row">
-                        <div>
-                            <label class="field-label" for="note1Text">Lembrete 1</label>
-                            <input type="text" id="note1Text" placeholder="Texto da primeira nota..." maxlength="96"/>
-                        </div>
-                        <div>
-                            <label class="field-label" for="note1Time">Data/hora (disparo)</label>
-                            <input type="datetime-local" id="note1Time"/>
+                    <div class="note-block" data-note="1">
+                        <label class="field-label" for="note1Text">Lembrete 1</label>
+                        <input type="text" id="note1Text" placeholder="Texto da primeira nota..." maxlength="96"/>
+                        <div class="note-rep">
+                            <select class="note-mode" id="note1Mode">
+                                <option value="once">Uma vez</option>
+                                <option value="daily">Todo dia</option>
+                                <option value="weekly">Dias da semana</option>
+                            </select>
+                            <input type="datetime-local" class="note-once" id="note1Once"/>
+                            <input type="time" class="note-daily" id="note1Time"/>
+                            <div class="note-week" id="note1Week">
+                                <button type="button" class="day-btn" data-day="0" title="Domingo">D</button>
+                                <button type="button" class="day-btn" data-day="1" title="Segunda">S</button>
+                                <button type="button" class="day-btn" data-day="2" title="Terça">T</button>
+                                <button type="button" class="day-btn" data-day="3" title="Quarta">Q</button>
+                                <button type="button" class="day-btn" data-day="4" title="Quinta">Q</button>
+                                <button type="button" class="day-btn" data-day="5" title="Sexta">S</button>
+                                <button type="button" class="day-btn" data-day="6" title="Sábado">S</button>
+                            </div>
                         </div>
                     </div>
-                    <div class="note-row">
-                        <div>
-                            <label class="field-label" for="note2Text">Lembrete 2</label>
-                            <input type="text" id="note2Text" placeholder="Texto da segunda nota..." maxlength="96"/>
-                        </div>
-                        <div>
-                            <label class="field-label" for="note2Time">Data/hora (disparo)</label>
-                            <input type="datetime-local" id="note2Time"/>
+                    <div class="note-block" data-note="2">
+                        <label class="field-label" for="note2Text">Lembrete 2</label>
+                        <input type="text" id="note2Text" placeholder="Texto da segunda nota..." maxlength="96"/>
+                        <div class="note-rep">
+                            <select class="note-mode" id="note2Mode">
+                                <option value="once">Uma vez</option>
+                                <option value="daily">Todo dia</option>
+                                <option value="weekly">Dias da semana</option>
+                            </select>
+                            <input type="datetime-local" class="note-once" id="note2Once"/>
+                            <input type="time" class="note-daily" id="note2Time"/>
+                            <div class="note-week" id="note2Week">
+                                <button type="button" class="day-btn" data-day="0" title="Domingo">D</button>
+                                <button type="button" class="day-btn" data-day="1" title="Segunda">S</button>
+                                <button type="button" class="day-btn" data-day="2" title="Terça">T</button>
+                                <button type="button" class="day-btn" data-day="3" title="Quarta">Q</button>
+                                <button type="button" class="day-btn" data-day="4" title="Quinta">Q</button>
+                                <button type="button" class="day-btn" data-day="5" title="Sexta">S</button>
+                                <button type="button" class="day-btn" data-day="6" title="Sábado">S</button>
+                            </div>
                         </div>
                     </div>
-                    <div class="note-row">
-                        <div>
-                            <label class="field-label" for="note3Text">Lembrete 3</label>
-                            <input type="text" id="note3Text" placeholder="Texto da terceira nota..." maxlength="96"/>
-                        </div>
-                        <div>
-                            <label class="field-label" for="note3Time">Data/hora (disparo)</label>
-                            <input type="datetime-local" id="note3Time"/>
+                    <div class="note-block" data-note="3">
+                        <label class="field-label" for="note3Text">Lembrete 3</label>
+                        <input type="text" id="note3Text" placeholder="Texto da terceira nota..." maxlength="96"/>
+                        <div class="note-rep">
+                            <select class="note-mode" id="note3Mode">
+                                <option value="once">Uma vez</option>
+                                <option value="daily">Todo dia</option>
+                                <option value="weekly">Dias da semana</option>
+                            </select>
+                            <input type="datetime-local" class="note-once" id="note3Once"/>
+                            <input type="time" class="note-daily" id="note3Time"/>
+                            <div class="note-week" id="note3Week">
+                                <button type="button" class="day-btn" data-day="0" title="Domingo">D</button>
+                                <button type="button" class="day-btn" data-day="1" title="Segunda">S</button>
+                                <button type="button" class="day-btn" data-day="2" title="Terça">T</button>
+                                <button type="button" class="day-btn" data-day="3" title="Quarta">Q</button>
+                                <button type="button" class="day-btn" data-day="4" title="Quinta">Q</button>
+                                <button type="button" class="day-btn" data-day="5" title="Sexta">S</button>
+                                <button type="button" class="day-btn" data-day="6" title="Sábado">S</button>
+                            </div>
                         </div>
                     </div>
                     <div class="controls">

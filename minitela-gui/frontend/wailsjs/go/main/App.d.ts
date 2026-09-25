@@ -10,7 +10,7 @@ export function CreateShortcut():Promise<string>;
 
 export function Disconnect():Promise<void>;
 
-export function GetNotes():Promise<Array<any>>;
+export function GetNoteRules():Promise<Array<main.noteRule>>;
 
 export function GetSchedules():Promise<Array<main.scheduleRule>>;
 
@@ -34,7 +34,7 @@ export function SetBacklight(arg1:number):Promise<void>;
 
 export function SetDateTime():Promise<void>;
 
-export function SetNotes(arg1:string,arg2:string,arg3:string,arg4:string,arg5:string,arg6:string):Promise<void>;
+export function SetNoteRules(arg1:Array<main.noteRule>):Promise<void>;
 
 export function SetPage(arg1:number):Promise<void>;
 
