@@ -18,8 +18,8 @@ export function Disconnect() {
   return window['go']['main']['App']['Disconnect']();
 }
 
-export function GetNoteRules() {
-  return window['go']['main']['App']['GetNoteRules']();
+export function GetNoteRule() {
+  return window['go']['main']['App']['GetNoteRule']();
 }
 
 export function GetSchedules() {
@@ -66,8 +66,8 @@ export function SetDateTime() {
   return window['go']['main']['App']['SetDateTime']();
 }
 
-export function SetNoteRules(arg1) {
-  return window['go']['main']['App']['SetNoteRules'](arg1);
+export function SetNoteRule(arg1) {
+  return window['go']['main']['App']['SetNoteRule'](arg1);
 }
 
 export function SetPage(arg1) {

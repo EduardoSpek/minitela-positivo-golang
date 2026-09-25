@@ -5,7 +5,7 @@ import {
     SetBacklight, WriteText,
     StartMonitor, StopMonitor, GetSystemStats,
     GoToPage, GoToImageSlot,
-    GetNoteRules, SetNoteRules,
+    GetNoteRule, SetNoteRule,
     GetSchedules, SetSchedules,
     GetWeatherConfig, SetWeatherConfig,
     AutoStartEnabled, SetAutoStartEnabled, CreateShortcut,
@@ -254,16 +254,14 @@ function bindPageSelectors() {
     });
 }
 
-// ---- notas (3 lembretes: texto + repetição uma vez / todo dia / semanal) ----
-function noteModeEls(i) {
-    return {
-        text: $('note' + i + 'Text'),
-        mode: $('note' + i + 'Mode'),
-        once: $('note' + i + 'Once'),
-        time: $('note' + i + 'Time'),
-        week: $('note' + i + 'Week'),
-    };
-}
+// ---- notas (1 lembrete: texto + repetição uma vez / todo dia / semanal) ----
+const NOTE = {
+    text: $('note1Text'),
+    mode: $('note1Mode'),
+    once: $('note1Once'),
+    time: $('note1Time'),
+    week: $('note1Week'),
+};
 
 function weekdayMaskFromWeek(weekEl) {
     let mask = 0;
@@ -279,63 +277,48 @@ function setWeekMask(weekEl, mask) {
     });
 }
 
-function applyNoteMode(i) {
-    const el = noteModeEls(i);
-    const mode = el.mode.value;
-    el.once.style.display = mode === 'once' ? '' : 'none';
-    el.time.style.display = mode === 'once' ? 'none' : '';
-    el.week.style.display = mode === 'weekly' ? '' : 'none';
+function applyNoteMode() {
+    const mode = NOTE.mode.value;
+    NOTE.once.style.display = mode === 'once' ? '' : 'none';
+    NOTE.time.style.display = mode === 'once' ? 'none' : '';
+    NOTE.week.style.display = mode === 'weekly' ? '' : 'none';
 }
 
 async function loadNotesView() {
-    for (let i = 1; i <= 3; i++) applyNoteMode(i);
+    applyNoteMode();
     try {
-        const saved = await GetNoteRules();
-        if (!Array.isArray(saved)) return;
-        for (let i = 0; i < saved.length && i < 3; i++) {
-            const r = saved[i];
-            const el = noteModeEls(i + 1);
-            el.text.value = r.text || '';
-            el.mode.value = r.mode || 'once';
-            el.once.value = r.onceAt || '';
-            el.time.value = r.time || '';
-            setWeekMask(el.week, r.weekdayBit || 0);
-            applyNoteMode(i + 1);
-        }
+        const r = await GetNoteRule();
+        if (!r) return;
+        NOTE.text.value = r.text || '';
+        NOTE.mode.value = r.mode || 'once';
+        NOTE.once.value = r.onceAt || '';
+        NOTE.time.value = r.time || '';
+        setWeekMask(NOTE.week, r.weekdayBit || 0);
+        applyNoteMode();
     } catch (e) { /* ignore */ }
 }
 
 $('btnSaveNotes').addEventListener('click', async () => {
     if (!connected) { tryConnect(); }
     try {
-        const rules = [];
-        for (let i = 1; i <= 3; i++) {
-            const el = noteModeEls(i);
-            const mode = el.mode.value;
-            rules.push({
-                text: el.text.value,
-                mode: mode,
-                onceAt: mode === 'once' ? el.once.value : '',
-                time: mode === 'once' ? '' : el.time.value,
-                weekdayBit: mode === 'weekly' ? weekdayMaskFromWeek(el.week) : 0,
-            });
-        }
-        await SetNoteRules(rules);
-        toast('Notas salvas (disparam e mudam a tela para Notas; o texto fica até você trocar de tela)');
+        const mode = NOTE.mode.value;
+        await SetNoteRule({
+            text: NOTE.text.value,
+            mode: mode,
+            onceAt: mode === 'once' ? NOTE.once.value : '',
+            time: mode === 'once' ? '' : NOTE.time.value,
+            weekdayBit: mode === 'weekly' ? weekdayMaskFromWeek(NOTE.week) : 0,
+        });
+        toast('Lembrete salvo (muda a tela para Notas no horário; o texto fica até você trocar de tela)');
     } catch (e) {
         toast('Falha: ' + String(e), 'err');
     }
 });
 
-for (let i = 1; i <= 3; i++) {
-    (function (idx) {
-        const el = noteModeEls(idx);
-        el.mode.addEventListener('change', () => applyNoteMode(idx));
-        el.week.querySelectorAll('.day-btn').forEach((b) => {
-            b.addEventListener('click', () => b.classList.toggle('on'));
-        });
-    })(i);
-}
+NOTE.mode.addEventListener('change', applyNoteMode);
+NOTE.week.querySelectorAll('.day-btn').forEach((b) => {
+    b.addEventListener('click', () => b.classList.toggle('on'));
+});
 
 // ---- agenda (pré-definições diárias: horário -> tela + brilho) ----
 const SCHED_PAGES = { 2: 'Notas', 3: 'Monitor', 4: 'Clima', 5: 'Imagem' };

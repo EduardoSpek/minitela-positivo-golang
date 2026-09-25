@@ -59,8 +59,12 @@ type noteRule struct {
 	Fired      bool   `json:"fired"`
 }
 
+// notesConfig is the on-disk shape. Reminder is the single reminder the stock
+// theme can display; the legacy Notes array is still accepted when reading so
+// an older config file is not lost.
 type notesConfig struct {
-	Notes [3]note `json:"notes"`
+	Reminder note   `json:"reminder"`
+	Notes    []note `json:"notes"`
 }
 
 func notesConfigPath() (string, error) {
@@ -71,28 +75,39 @@ func notesConfigPath() (string, error) {
 	return filepath.Join(dir, "minitela-gui.exe", "notes.json"), nil
 }
 
-// loadNotesConfig reads the persisted reminders, migrating the legacy one-shot
-// format (no Mode) to the current representation.
-func loadNotesConfig() [3]note {
+// loadNotesConfig reads the persisted reminder, accepting both the current
+// single-reminder shape and the legacy three-slot array. Legacy notes without
+// a Mode are migrated to "once".
+func loadNotesConfig() note {
 	var cfg notesConfig
 	p, err := notesConfigPath()
 	if err != nil {
-		return cfg.Notes
+		return note{}
 	}
 	b, err := os.ReadFile(p)
-	if err == nil {
-		_ = json.Unmarshal(b, &cfg)
+	if err != nil {
+		return note{}
 	}
-	// Migrate legacy notes (Mode empty) to "once".
-	for i := range cfg.Notes {
-		if cfg.Notes[i].Mode == "" {
-			cfg.Notes[i].Mode = noteModeOnce
+	if err := json.Unmarshal(b, &cfg); err != nil {
+		return note{}
+	}
+	n := cfg.Reminder
+	if n.Text == "" && n.At.IsZero() {
+		// Legacy file: keep the first reminder that actually has content.
+		for _, old := range cfg.Notes {
+			if old.Text != "" {
+				n = old
+				break
+			}
 		}
 	}
-	return cfg.Notes
+	if n.Mode == "" {
+		n.Mode = noteModeOnce
+	}
+	return n
 }
 
-func saveNotesConfig(notes [3]note) error {
+func saveNotesConfig(n note) error {
 	p, err := notesConfigPath()
 	if err != nil {
 		return err
@@ -100,53 +115,43 @@ func saveNotesConfig(notes [3]note) error {
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 		return err
 	}
-	b, err := json.MarshalIndent(notesConfig{Notes: notes}, "", "  ")
+	b, err := json.MarshalIndent(notesConfig{Reminder: n}, "", "  ")
 	if err != nil {
 		return err
 	}
 	return os.WriteFile(p, b, 0o600)
 }
 
-// GetNoteRules returns the current reminders for the UI to prefill.
-func (a *App) GetNoteRules() []noteRule {
+// GetNoteRule returns the current reminder for the UI to prefill.
+func (a *App) GetNoteRule() noteRule {
 	a.notesMu.Lock()
-	defer a.notesMu.Unlock()
-	out := make([]noteRule, 0, len(a.notes))
-	for _, n := range a.notes {
-		r := noteRule{Text: n.Text, Mode: n.Mode, Time: n.Time, Fired: n.Fired}
-		if n.Mode == noteModeOnce && !n.At.IsZero() {
-			r.OnceAt = n.At.Format("2006-01-02T15:04")
-		}
-		mask := 0
-		for i, on := range n.Days {
-			if on {
-				mask |= 1 << i
-			}
-		}
-		r.WeekdayBit = mask
-		out = append(out, r)
+	n := a.note
+	a.notesMu.Unlock()
+	r := noteRule{Text: n.Text, Mode: n.Mode, Time: n.Time, Fired: n.Fired}
+	if n.Mode == noteModeOnce && !n.At.IsZero() {
+		r.OnceAt = n.At.Format("2006-01-02T15:04")
 	}
-	return out
+	mask := 0
+	for i, on := range n.Days {
+		if on {
+			mask |= 1 << i
+		}
+	}
+	r.WeekdayBit = mask
+	return r
 }
 
-// SetNoteRules validates and stores up to 3 reminders, resetting the fired
-// state so a new configuration takes effect on its next due time.
-func (a *App) SetNoteRules(rules []noteRule) error {
-	var notes [3]note
-	for i, r := range rules {
-		if i > 2 {
-			break
-		}
-		n, err := r.toNote()
-		if err != nil {
-			return fmt.Errorf("lembrete %d: %w", i+1, err)
-		}
-		notes[i] = n
+// SetNoteRule validates and stores the reminder, clearing the fired state so a
+// new configuration takes effect at its next due time.
+func (a *App) SetNoteRule(r noteRule) error {
+	n, err := r.toNote()
+	if err != nil {
+		return err
 	}
 	a.notesMu.Lock()
-	a.notes = notes
+	a.note = n
 	a.notesSig = ""
-	err := saveNotesConfig(a.notes)
+	err = saveNotesConfig(a.note)
 	a.notesMu.Unlock()
 	return err
 }

@@ -42,9 +42,9 @@ type App struct {
 	monitorStop    chan struct{}
 	monitorMu      sync.Mutex
 
-	// notes state (Reminder 1/2/3) for the Notas screen
+	// note state (the single Reminder) for the Notas screen
 	notesMu sync.Mutex
-	notes   [3]note
+	note    note
 	// notesSig holds the last text written to the reminder register (1090).
 	// The firmware drops into a no-response state when several SET_REGISTER
 	// frames arrive in a row, so the monitor loop must not rewrite identical
@@ -76,7 +76,7 @@ func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	// Restore persisted reminders so rescheduling survives app restarts.
 	a.notesMu.Lock()
-	a.notes = loadNotesConfig()
+	a.note = loadNotesConfig()
 	a.notesMu.Unlock()
 	// Install the global keyboard hook so the dedicated notebook key advances
 	// the mini screen page even when the app does not have focus.
@@ -523,22 +523,15 @@ func (a *App) invalidatePageCaches() {
 	a.weatherMu.Unlock()
 }
 
-// notesScreenText builds the single message shown on the Notas screen by joining
-// the texts of every fired reminder. The stock theme's "Reminder" page has only
-// ONE text widget bound to register 1090 (Reminder1) — verified in its
-// data.json — so the three reminders share that field. When nothing has fired,
-// the theme placeholder "Sem notas" is shown.
-func notesScreenText(notes [3]note) string {
-	parts := make([]string, 0, 3)
-	for _, n := range notes {
-		if n.Fired && n.Text != "" {
-			parts = append(parts, normalizeText(n.Text))
-		}
+// notesScreenText returns the message shown on the Notas screen: the reminder
+// text once it has fired, or the theme placeholder "Sem notas" otherwise. The
+// stock theme's "Reminder" page has a single text widget bound to register
+// 1090 (Reminder1) — verified in its data.json.
+func notesScreenText(n note) string {
+	if n.Fired && n.Text != "" {
+		return normalizeText(n.Text)
 	}
-	if len(parts) == 0 {
-		return "Sem notas"
-	}
-	return strings.Join(parts, " | ")
+	return "Sem notas"
 }
 
 // pushNotesTags writes the reminder text to the only register the theme binds on
@@ -550,9 +543,8 @@ func notesScreenText(notes [3]note) string {
 // so staying on the Notas page costs no serial traffic.
 func pushNotesTags(c *minitela.Client, a *App) error {
 	a.notesMu.Lock()
-	notes := a.notes
-	unchanged := a.notesSig == notesScreenText(notes)
-	text := notesScreenText(notes)
+	text := notesScreenText(a.note)
+	unchanged := a.notesSig == text
 	a.notesMu.Unlock()
 	if unchanged {
 		return nil
@@ -577,27 +569,22 @@ func pushNotesTags(c *minitela.Client, a *App) error {
 func fireDueNote(c *minitela.Client, a *App) (bool, error) {
 	now := time.Now()
 	today := now.Format("2006-01-02")
-	var due []int
 	a.notesMu.Lock()
-	for i := 0; i < 3; i++ {
-		n := a.notes[i]
-		if noteDue(n, now) {
-			a.notes[i].Fired = true
-			a.notes[i].FiredAt = now
-			if n.Mode == noteModeDaily || n.Mode == noteModeWeekly {
-				a.notes[i].LastFiredDate = today
-			}
-			due = append(due, i)
+	n := a.note
+	fired := noteDue(n, now)
+	if fired {
+		a.note.Fired = true
+		a.note.FiredAt = now
+		if n.Mode == noteModeDaily || n.Mode == noteModeWeekly {
+			a.note.LastFiredDate = today
 		}
+		// Persist the fired state so the notice survives an app restart.
+		_ = saveNotesConfig(a.note)
 	}
 	a.notesMu.Unlock()
-	if len(due) == 0 {
+	if !fired {
 		return false, nil
 	}
-	// Persist the fired state so the notice survives an app restart.
-	a.notesMu.Lock()
-	_ = saveNotesConfig(a.notes)
-	a.notesMu.Unlock()
 	if err := c.SetPage(PageNotas); err != nil {
 		return true, err
 	}
@@ -614,72 +601,78 @@ func truncateASCII(s string, n int) string {
 	return s[:n]
 }
 
-// pushWeatherTags writes the Clima screen registers for all five forecast days
-// (Weather_N_Type / Temp / Temp_Min / Temp_Max / Temp_Desc, 1110-1134) plus the
-// page's custom city, currentTemp and forecastTemp registers (2027, 2030-2032).
-// When no forecast has been fetched yet it tries to (re)load it once.
+// weatherScreenDays is how many forecast days the stock Clima page can show.
+// Verified in the theme's data.json: the Weather page binds only
+// Weather_1/2/3_Type (1110/1115/1120), Weather_2/3_Temp_Desc (1119/1124),
+// city (2027), currentTemp (2030) and forecastTemp1/2 (2031/2032). There is no
+// widget for the per-day Temp/Temp_Min/Temp_Max fields nor for a 4th/5th day.
+const weatherScreenDays = 3
+
+// pushWeatherTags writes the Clima screen using ONLY the registers the stock
+// theme binds. Earlier versions also wrote Weather_N_Temp/Min/Max, the day
+// descriptions for days we cannot show and days 4-5: those registers do not
+// exist in the theme, so every write burned the full 2s timeout and the device
+// stopped responding.
 //
-// The whole payload is fingerprinted in weatherSig: when nothing changed (the
-// usual case, since the forecast refreshes every 30 min) this returns without
-// touching the serial port, which is what previously kept the fragile link busy
-// with ~11 SET_REGISTER frames every 10 seconds.
+// The payload is fingerprinted in weatherSig, so an unchanged forecast costs no
+// serial traffic at all.
 func pushWeatherTags(c *minitela.Client, a *App) error {
 	days, cfg, err := a.ensureWeather()
 	if err != nil || len(days) == 0 {
 		// No internet or no city configured: render a friendly offline state.
 		return nil
 	}
-	// Condition glyph + numeric temperature registers. Register layout is
-	// contiguous: day N starts at WeatherNType + ((N-1) * 5).
-	typeRegs := []uint16{
-		minitela.Weather1Type, minitela.Weather2Type, minitela.Weather3Type,
-		minitela.Weather4Type, minitela.Weather5Type,
+	if len(days) > weatherScreenDays {
+		days = days[:weatherScreenDays]
 	}
-	nums := make([]minitela.NumTag, 0, len(days)*3)
-	var desc []struct {
-		id  uint16
-		val string
-	}
-	for i, d := range days {
-		if i >= len(typeRegs) {
-			break
-		}
-		nums = append(nums,
-			minitela.NumTag{ID: typeRegs[i], Value: int32(wmoToIcon(d.WMO, d.IsDay))},
-			minitela.NumTag{ID: typeRegs[i] + 1, Value: int32(d.Temp)},
-			minitela.NumTag{ID: typeRegs[i] + 3, Value: int32(d.TempMax)},
-			minitela.NumTag{ID: typeRegs[i] + 2, Value: int32(d.TempMin)},
-		)
-		// Weather_N_Temp_Desc registers hold the date label "DD/MM".
-		desc = append(desc, struct {
-			id  uint16
-			val string
-		}{typeRegs[i] + 4, dateLabel(d.Date)})
-	}
+
 	display := cfg.PlaceName
 	if display == "" {
 		display = cfg.City
 	}
 	display = shortCityName(display)
 
+	// Condition glyphs for the three days the screen shows.
+	typeRegs := []uint16{
+		minitela.Weather1Type, minitela.Weather2Type, minitela.Weather3Type,
+	}
+	nums := make([]minitela.NumTag, 0, len(typeRegs))
+	for i := 0; i < len(days) && i < len(typeRegs); i++ {
+		nums = append(nums, minitela.NumTag{
+			ID:    typeRegs[i],
+			Value: int32(wmoToIcon(days[i].WMO, days[i].IsDay)),
+		})
+	}
+
+	// Day labels under the two forecast columns.
+	desc := make([]struct {
+		id  uint16
+		val string
+	}, 0, 2)
+	descRegs := []uint16{minitela.Weather2TempDesc, minitela.Weather3TempDesc}
+	for i := 1; i < len(days) && i-1 < len(descRegs); i++ {
+		desc = append(desc, struct {
+			id  uint16
+			val string
+		}{descRegs[i-1], dateLabel(days[i].Date)})
+	}
+
+	// Today's min°/max° plus the two forecast columns.
+	currentTemp := fmt.Sprintf("%d°/%d°", days[0].TempMin, days[0].TempMax)
+	forecastTemps := map[uint16]string{}
+	for i := 1; i <= 2 && i < len(days); i++ {
+		id := minitela.RegForecastTemp1
+		if i == 2 {
+			id = minitela.RegForecastTemp2
+		}
+		forecastTemps[id] = fmt.Sprintf("%d°/%d°", days[i].TempMin, days[i].TempMax)
+	}
+
 	// Fingerprint everything this function would write.
 	var sig strings.Builder
 	sig.WriteString(display)
 	for _, n := range nums {
 		fmt.Fprintf(&sig, "|%d:%d", n.ID, n.Value)
-	}
-	currentTemp := ""
-	forecastTemps := map[uint16]string{}
-	if len(days) > 0 {
-		d0 := days[0]
-		currentTemp = fmt.Sprintf("%d°/%d°", d0.TempMin, d0.TempMax)
-		for i := 1; i <= 2 && i < len(days); i++ {
-			id := minitela.RegForecastTemp1
-			if i == 2 {
-				id = minitela.RegForecastTemp2
-			}
-			forecastTemps[id] = fmt.Sprintf("%d°/%d°", days[i].TempMin, days[i].TempMax)
-		}
 	}
 	sig.WriteString("|cur=" + currentTemp)
 	for _, id := range []uint16{minitela.RegForecastTemp1, minitela.RegForecastTemp2} {
@@ -702,21 +695,16 @@ func pushWeatherTags(c *minitela.Client, a *App) error {
 	if err := c.SetStringTag(minitela.RegCity, truncateASCII(display, 32)); err != nil {
 		return err
 	}
-	// currentTemp shows today's range as "min°/max°".
-	if currentTemp != "" {
-		if err := c.SetStringTag(minitela.RegCurrentTemp, currentTemp); err != nil {
-			return err
+	if err := c.SetStringTag(minitela.RegCurrentTemp, currentTemp); err != nil {
+		return err
+	}
+	for _, id := range []uint16{minitela.RegForecastTemp1, minitela.RegForecastTemp2} {
+		lab, ok := forecastTemps[id]
+		if !ok {
+			continue
 		}
-		// forecastTemp1/2 show the following two days as "min°/max°", matching
-		// the theme's placeholder text ("25°/25°").
-		for _, id := range []uint16{minitela.RegForecastTemp1, minitela.RegForecastTemp2} {
-			lab, ok := forecastTemps[id]
-			if !ok {
-				continue
-			}
-			if err := c.SetStringTag(id, lab); err != nil {
-				return err
-			}
+		if err := c.SetStringTag(id, lab); err != nil {
+			return err
 		}
 	}
 	for _, s := range desc {
@@ -730,6 +718,7 @@ func pushWeatherTags(c *minitela.Client, a *App) error {
 	a.weatherMu.Unlock()
 	return nil
 }
+
 
 // weatherTTL is how long a cached forecast is served before a refresh.
 // Without it the Clima screen would freeze on the first fetch for as long as
