@@ -618,8 +618,7 @@ func pushNoteSlot(c *minitela.Client, a *App, i int) error {
 func fireDueNote(c *minitela.Client, a *App) (bool, error) {
 	now := time.Now()
 	today := now.Format("2006-01-02")
-	fired := false
-	first := -1
+	var due []int
 	a.notesMu.Lock()
 	for i := 0; i < 3; i++ {
 		n := a.notes[i]
@@ -629,14 +628,11 @@ func fireDueNote(c *minitela.Client, a *App) (bool, error) {
 			if n.Mode == noteModeDaily || n.Mode == noteModeWeekly {
 				a.notes[i].LastFiredDate = today
 			}
-			if first < 0 {
-				first = i
-			}
-			fired = true
+			due = append(due, i)
 		}
 	}
 	a.notesMu.Unlock()
-	if !fired {
+	if len(due) == 0 {
 		return false, nil
 	}
 	// Persist the fired state so the notice survives an app restart.
@@ -646,10 +642,16 @@ func fireDueNote(c *minitela.Client, a *App) (bool, error) {
 	if err := c.SetPage(PageNotas); err != nil {
 		return true, err
 	}
-	// Write only the slot that fired: rewriting all three registers here used
-	// to freeze the mini screen, because the monitor loop immediately repeated
-	// the same burst and the firmware stopped responding.
-	return true, pushNoteSlot(c, a, first)
+	// Write every slot that fired in this tick. Only the slots that just became
+	// due are touched (never all three on every tick), which is what keeps this
+	// path from freezing the mini screen while still showing every reminder
+	// when several are due at the same time.
+	for _, i := range due {
+		if err := pushNoteSlot(c, a, i); err != nil {
+			return true, err
+		}
+	}
+	return true, nil
 }
 
 // truncateASCII trims s to at most n bytes/characters without splitting UTF-8.

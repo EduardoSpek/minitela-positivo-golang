@@ -195,7 +195,9 @@ func noteDue(n note, now time.Time) bool {
 	}
 	switch n.Mode {
 	case noteModeOnce, "":
-		return !n.At.IsZero() && !now.Before(n.At)
+		// A one-shot note fires a single time: keep the Fired guard, otherwise
+		// its past At would make it fire again on every monitor tick.
+		return !n.Fired && !n.At.IsZero() && !now.Before(n.At)
 	case noteModeDaily:
 		return now.Format("15:04") == n.Time &&
 			n.LastFiredDate != now.Format("2006-01-02")
