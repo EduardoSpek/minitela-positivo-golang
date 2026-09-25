@@ -45,11 +45,11 @@ type App struct {
 	// notes state (Reminder 1/2/3) for the Notas screen
 	notesMu sync.Mutex
 	notes   [3]note
-	// notesSig holds the last text+time written to each reminder register.
+	// notesSig holds the last text written to the reminder register (1090).
 	// The firmware drops into a no-response state when several SET_REGISTER
 	// frames arrive in a row, so the monitor loop must not rewrite identical
 	// content every cycle.
-	notesSig [3]string
+	notesSig string
 
 	// weather state for the Clima screen
 	weatherMu        sync.Mutex
@@ -516,95 +516,54 @@ func pushSystemTags(c *minitela.Client, g systemInfo) error {
 // reset) and whenever new notes or a new forecast are stored.
 func (a *App) invalidatePageCaches() {
 	a.notesMu.Lock()
-	a.notesSig = [3]string{}
+	a.notesSig = ""
 	a.notesMu.Unlock()
 	a.weatherMu.Lock()
 	a.weatherSig = ""
 	a.weatherMu.Unlock()
 }
 
-// noteSlotContent returns the text and time label a reminder slot should show,
-// plus a signature identifying that content. Non-fired slots render the theme
-// placeholder "Sem notas".
-func noteSlotContent(n note) (text string, timeLabel string, sig string) {
-	if n.Fired && n.Text != "" {
-		// Show the reminder with the actual day/time when it fired.
-		text = normalizeText(n.Text)
-		if !n.FiredAt.IsZero() {
-			timeLabel = n.FiredAt.Format("02/01 15:04")
+// notesScreenText builds the single message shown on the Notas screen by joining
+// the texts of every fired reminder. The stock theme's "Reminder" page has only
+// ONE text widget bound to register 1090 (Reminder1) — verified in its
+// data.json — so the three reminders share that field. When nothing has fired,
+// the theme placeholder "Sem notas" is shown.
+func notesScreenText(notes [3]note) string {
+	parts := make([]string, 0, 3)
+	for _, n := range notes {
+		if n.Fired && n.Text != "" {
+			parts = append(parts, normalizeText(n.Text))
 		}
 	}
-	if text == "" {
-		text = "Sem notas"
+	if len(parts) == 0 {
+		return "Sem notas"
 	}
-	return text, timeLabel, text + "\x00" + timeLabel
+	return strings.Join(parts, " | ")
 }
 
-// pushNotesTags writes the three reminders to the Notas screen registers
-// (1090-1095). Only fired reminders show their text (with the day/time the
-// notice was shown); everything else shows the theme placeholder "Sem notas".
-// The scheduled day/time is never displayed: it only triggers the page flip.
+// pushNotesTags writes the reminder text to the only register the theme binds on
+// the Notas page (1090 / Reminder1). Writing 1091-1095 was pointless: those
+// registers do not exist in the theme, so the device never answered and each
+// write burned the full 2s timeout, which is what killed the serial link.
 //
-// Each slot is compared against notesSig and only rewritten when its content
-// actually changed, so staying on the Notas page costs no serial traffic (the
-// firmware goes unresponsive when SET_REGISTER frames arrive back-to-back).
+// The payload is compared against notesSig and only rewritten when it changed,
+// so staying on the Notas page costs no serial traffic.
 func pushNotesTags(c *minitela.Client, a *App) error {
 	a.notesMu.Lock()
 	notes := a.notes
+	unchanged := a.notesSig == notesScreenText(notes)
+	text := notesScreenText(notes)
 	a.notesMu.Unlock()
-
-	regText := []uint16{minitela.RegReminder1Text, minitela.RegReminder2Text, minitela.RegReminder3Text}
-	regTime := []uint16{minitela.RegReminder1Time, minitela.RegReminder2Time, minitela.RegReminder3Time}
-	for i := 0; i < 3; i++ {
-		text, timeLabel, sig := noteSlotContent(notes[i])
-		a.notesMu.Lock()
-		unchanged := a.notesSig[i] == sig
-		a.notesMu.Unlock()
-		if unchanged {
-			continue
-		}
-		if err := c.SetStringTag(regText[i], truncateASCII(text, 96)); err != nil {
-			return err
-		}
-		// Small pause between register writes: the serial link is fragile and
-		// several SET_REGISTER frames in a row make the firmware drop into its
-		// no-response state. Let each write settle before the next one.
-		time.Sleep(150 * time.Millisecond)
-		if err := c.SetStringTag(regTime[i], truncateASCII(timeLabel, 32)); err != nil {
-			return err
-		}
-		// Only remember the content after a successful write, so a failed
-		// cycle is retried on the next pass.
-		a.notesMu.Lock()
-		a.notesSig[i] = sig
-		a.notesMu.Unlock()
-		time.Sleep(150 * time.Millisecond)
-	}
-	return nil
-}
-
-// pushNoteSlot writes only the given reminder slot (text + time) and records
-// its signature. Used by the fire path so a dispatched note shows up
-// immediately without rewriting the other two slots.
-func pushNoteSlot(c *minitela.Client, a *App, i int) error {
-	if i < 0 || i > 2 {
+	if unchanged {
 		return nil
 	}
-	a.notesMu.Lock()
-	n := a.notes[i]
-	a.notesMu.Unlock()
-	text, timeLabel, sig := noteSlotContent(n)
-	regText := []uint16{minitela.RegReminder1Text, minitela.RegReminder2Text, minitela.RegReminder3Text}
-	regTime := []uint16{minitela.RegReminder1Time, minitela.RegReminder2Time, minitela.RegReminder3Time}
-	if err := c.SetStringTag(regText[i], truncateASCII(text, 96)); err != nil {
+	if err := c.SetStringTag(minitela.RegReminder1Text, truncateASCII(text, 96)); err != nil {
 		return err
 	}
-	time.Sleep(150 * time.Millisecond)
-	if err := c.SetStringTag(regTime[i], truncateASCII(timeLabel, 32)); err != nil {
-		return err
-	}
+	// Only remember the content after a successful write, so a failed cycle is
+	// retried on the next pass.
 	a.notesMu.Lock()
-	a.notesSig[i] = sig
+	a.notesSig = text
 	a.notesMu.Unlock()
 	return nil
 }
@@ -642,16 +601,9 @@ func fireDueNote(c *minitela.Client, a *App) (bool, error) {
 	if err := c.SetPage(PageNotas); err != nil {
 		return true, err
 	}
-	// Write every slot that fired in this tick. Only the slots that just became
-	// due are touched (never all three on every tick), which is what keeps this
-	// path from freezing the mini screen while still showing every reminder
-	// when several are due at the same time.
-	for _, i := range due {
-		if err := pushNoteSlot(c, a, i); err != nil {
-			return true, err
-		}
-	}
-	return true, nil
+	// Write the reminder text once: a single register write right after the
+	// page flip. Rewriting every register here used to freeze the mini screen.
+	return true, pushNotesTags(c, a)
 }
 
 // truncateASCII trims s to at most n bytes/characters without splitting UTF-8.
