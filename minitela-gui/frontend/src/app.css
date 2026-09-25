@@ -277,6 +277,12 @@ html, body {
     flex-wrap: wrap;
 }
 
+.note-row + .note-row,
+.note-row + .controls,
+.controls + .empty-hint {
+    margin-top: 14px;
+}
+
 /* ===== Segmented control (image page picker) ===== */
 .segmented {
     display: inline-flex;
