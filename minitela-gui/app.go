@@ -45,11 +45,19 @@ type App struct {
 	// notes state (Reminder 1/2/3) for the Notas screen
 	notesMu sync.Mutex
 	notes   [3]note
+	// notesSig holds the last text+time written to each reminder register.
+	// The firmware drops into a no-response state when several SET_REGISTER
+	// frames arrive in a row, so the monitor loop must not rewrite identical
+	// content every cycle.
+	notesSig [3]string
 
 	// weather state for the Clima screen
 	weatherMu        sync.Mutex
 	weatherLast      []DayForecast
 	weatherFetchedAt time.Time
+	// weatherSig holds the last forecast payload written to the Clima
+	// registers, so unchanged forecasts cost zero serial operations.
+	weatherSig string
 
 	// daily preset (Agenda) tracking: active window rule index (-1 = none),
 	// last applied brightness, and last enforcement check
@@ -341,6 +349,9 @@ func (a *App) StartMonitor(intervalSeconds int) error {
 			}
 			if last := lastPage.Load(); pg != last {
 				lastPage.Store(pg)
+				// Entering a page (or a firmware reboot resetting to page 1)
+				// must repopulate that page's registers: drop the fingerprints.
+				a.invalidatePageCaches()
 				runtimeEmit(a.ctx, "page", pg)
 			}
 			// Monitor data + top-bar clock are unconditional (cheap, needed on
@@ -499,10 +510,44 @@ func pushSystemTags(c *minitela.Client, g systemInfo) error {
 	return c.SetStringTag(minitela.RegBTName, "Desconectado")
 }
 
+// invalidatePageCaches clears the Notas/Clima write fingerprints so their
+// registers are repopulated on the next pass. Called when the active page
+// changes (which also covers a firmware reboot, since the page register is
+// reset) and whenever new notes or a new forecast are stored.
+func (a *App) invalidatePageCaches() {
+	a.notesMu.Lock()
+	a.notesSig = [3]string{}
+	a.notesMu.Unlock()
+	a.weatherMu.Lock()
+	a.weatherSig = ""
+	a.weatherMu.Unlock()
+}
+
+// noteSlotContent returns the text and time label a reminder slot should show,
+// plus a signature identifying that content. Non-fired slots render the theme
+// placeholder "Sem notas".
+func noteSlotContent(n note) (text string, timeLabel string, sig string) {
+	if n.Fired && n.Text != "" {
+		// Show the reminder with the actual day/time when it fired.
+		text = normalizeText(n.Text)
+		if !n.FiredAt.IsZero() {
+			timeLabel = n.FiredAt.Format("02/01 15:04")
+		}
+	}
+	if text == "" {
+		text = "Sem notas"
+	}
+	return text, timeLabel, text + "\x00" + timeLabel
+}
+
 // pushNotesTags writes the three reminders to the Notas screen registers
 // (1090-1095). Only fired reminders show their text (with the day/time the
 // notice was shown); everything else shows the theme placeholder "Sem notas".
 // The scheduled day/time is never displayed: it only triggers the page flip.
+//
+// Each slot is compared against notesSig and only rewritten when its content
+// actually changed, so staying on the Notas page costs no serial traffic (the
+// firmware goes unresponsive when SET_REGISTER frames arrive back-to-back).
 func pushNotesTags(c *minitela.Client, a *App) error {
 	a.notesMu.Lock()
 	notes := a.notes
@@ -511,17 +556,12 @@ func pushNotesTags(c *minitela.Client, a *App) error {
 	regText := []uint16{minitela.RegReminder1Text, minitela.RegReminder2Text, minitela.RegReminder3Text}
 	regTime := []uint16{minitela.RegReminder1Time, minitela.RegReminder2Time, minitela.RegReminder3Time}
 	for i := 0; i < 3; i++ {
-		text := ""
-		var timeLabel string
-		if notes[i].Fired && notes[i].Text != "" {
-			// Show the reminder with the actual day/time when it fired.
-			text = normalizeText(notes[i].Text)
-			if !notes[i].FiredAt.IsZero() {
-				timeLabel = notes[i].FiredAt.Format("02/01 15:04")
-			}
-		}
-		if text == "" {
-			text = "Sem notas"
+		text, timeLabel, sig := noteSlotContent(notes[i])
+		a.notesMu.Lock()
+		unchanged := a.notesSig[i] == sig
+		a.notesMu.Unlock()
+		if unchanged {
+			continue
 		}
 		if err := c.SetStringTag(regText[i], truncateASCII(text, 96)); err != nil {
 			return err
@@ -533,8 +573,39 @@ func pushNotesTags(c *minitela.Client, a *App) error {
 		if err := c.SetStringTag(regTime[i], truncateASCII(timeLabel, 32)); err != nil {
 			return err
 		}
+		// Only remember the content after a successful write, so a failed
+		// cycle is retried on the next pass.
+		a.notesMu.Lock()
+		a.notesSig[i] = sig
+		a.notesMu.Unlock()
 		time.Sleep(150 * time.Millisecond)
 	}
+	return nil
+}
+
+// pushNoteSlot writes only the given reminder slot (text + time) and records
+// its signature. Used by the fire path so a dispatched note shows up
+// immediately without rewriting the other two slots.
+func pushNoteSlot(c *minitela.Client, a *App, i int) error {
+	if i < 0 || i > 2 {
+		return nil
+	}
+	a.notesMu.Lock()
+	n := a.notes[i]
+	a.notesMu.Unlock()
+	text, timeLabel, sig := noteSlotContent(n)
+	regText := []uint16{minitela.RegReminder1Text, minitela.RegReminder2Text, minitela.RegReminder3Text}
+	regTime := []uint16{minitela.RegReminder1Time, minitela.RegReminder2Time, minitela.RegReminder3Time}
+	if err := c.SetStringTag(regText[i], truncateASCII(text, 96)); err != nil {
+		return err
+	}
+	time.Sleep(150 * time.Millisecond)
+	if err := c.SetStringTag(regTime[i], truncateASCII(timeLabel, 32)); err != nil {
+		return err
+	}
+	a.notesMu.Lock()
+	a.notesSig[i] = sig
+	a.notesMu.Unlock()
 	return nil
 }
 
@@ -548,6 +619,7 @@ func fireDueNote(c *minitela.Client, a *App) (bool, error) {
 	now := time.Now()
 	today := now.Format("2006-01-02")
 	fired := false
+	first := -1
 	a.notesMu.Lock()
 	for i := 0; i < 3; i++ {
 		n := a.notes[i]
@@ -556,6 +628,9 @@ func fireDueNote(c *minitela.Client, a *App) (bool, error) {
 			a.notes[i].FiredAt = now
 			if n.Mode == noteModeDaily || n.Mode == noteModeWeekly {
 				a.notes[i].LastFiredDate = today
+			}
+			if first < 0 {
+				first = i
 			}
 			fired = true
 		}
@@ -571,7 +646,10 @@ func fireDueNote(c *minitela.Client, a *App) (bool, error) {
 	if err := c.SetPage(PageNotas); err != nil {
 		return true, err
 	}
-	return true, pushNotesTags(c, a)
+	// Write only the slot that fired: rewriting all three registers here used
+	// to freeze the mini screen, because the monitor loop immediately repeated
+	// the same burst and the firmware stopped responding.
+	return true, pushNoteSlot(c, a, first)
 }
 
 // truncateASCII trims s to at most n bytes/characters without splitting UTF-8.
@@ -586,6 +664,11 @@ func truncateASCII(s string, n int) string {
 // (Weather_N_Type / Temp / Temp_Min / Temp_Max / Temp_Desc, 1110-1134) plus the
 // page's custom city, currentTemp and forecastTemp registers (2027, 2030-2032).
 // When no forecast has been fetched yet it tries to (re)load it once.
+//
+// The whole payload is fingerprinted in weatherSig: when nothing changed (the
+// usual case, since the forecast refreshes every 30 min) this returns without
+// touching the serial port, which is what previously kept the fragile link busy
+// with ~11 SET_REGISTER frames every 10 seconds.
 func pushWeatherTags(c *minitela.Client, a *App) error {
 	days, cfg, err := a.ensureWeather()
 	if err != nil || len(days) == 0 {
@@ -619,32 +702,64 @@ func pushWeatherTags(c *minitela.Client, a *App) error {
 			val string
 		}{typeRegs[i] + 4, dateLabel(d.Date)})
 	}
-	if err := c.SetNumTags(nums); err != nil {
-		return err
-	}
 	display := cfg.PlaceName
 	if display == "" {
 		display = cfg.City
 	}
 	display = shortCityName(display)
-	if err := c.SetStringTag(minitela.RegCity, truncateASCII(display, 32)); err != nil {
-		return err
+
+	// Fingerprint everything this function would write.
+	var sig strings.Builder
+	sig.WriteString(display)
+	for _, n := range nums {
+		fmt.Fprintf(&sig, "|%d:%d", n.ID, n.Value)
 	}
-	// currentTemp shows today's range as "min°/max°".
+	currentTemp := ""
+	forecastTemps := map[uint16]string{}
 	if len(days) > 0 {
 		d0 := days[0]
-		cur := fmt.Sprintf("%d°/%d°", d0.TempMin, d0.TempMax)
-		if err := c.SetStringTag(minitela.RegCurrentTemp, cur); err != nil {
-			return err
-		}
-		// forecastTemp1/2 show the following two days as "min°/max°", matching
-		// the theme's placeholder text ("25°/25°").
+		currentTemp = fmt.Sprintf("%d°/%d°", d0.TempMin, d0.TempMax)
 		for i := 1; i <= 2 && i < len(days); i++ {
 			id := minitela.RegForecastTemp1
 			if i == 2 {
 				id = minitela.RegForecastTemp2
 			}
-			lab := fmt.Sprintf("%d°/%d°", days[i].TempMin, days[i].TempMax)
+			forecastTemps[id] = fmt.Sprintf("%d°/%d°", days[i].TempMin, days[i].TempMax)
+		}
+	}
+	sig.WriteString("|cur=" + currentTemp)
+	for _, id := range []uint16{minitela.RegForecastTemp1, minitela.RegForecastTemp2} {
+		fmt.Fprintf(&sig, "|f%d=%s", id, forecastTemps[id])
+	}
+	for _, s := range desc {
+		fmt.Fprintf(&sig, "|d%d=%s", s.id, s.val)
+	}
+
+	a.weatherMu.Lock()
+	unchanged := a.weatherSig == sig.String()
+	a.weatherMu.Unlock()
+	if unchanged {
+		return nil
+	}
+
+	if err := c.SetNumTags(nums); err != nil {
+		return err
+	}
+	if err := c.SetStringTag(minitela.RegCity, truncateASCII(display, 32)); err != nil {
+		return err
+	}
+	// currentTemp shows today's range as "min°/max°".
+	if currentTemp != "" {
+		if err := c.SetStringTag(minitela.RegCurrentTemp, currentTemp); err != nil {
+			return err
+		}
+		// forecastTemp1/2 show the following two days as "min°/max°", matching
+		// the theme's placeholder text ("25°/25°").
+		for _, id := range []uint16{minitela.RegForecastTemp1, minitela.RegForecastTemp2} {
+			lab, ok := forecastTemps[id]
+			if !ok {
+				continue
+			}
 			if err := c.SetStringTag(id, lab); err != nil {
 				return err
 			}
@@ -655,6 +770,10 @@ func pushWeatherTags(c *minitela.Client, a *App) error {
 			return err
 		}
 	}
+	// Record the fingerprint only after every write succeeded.
+	a.weatherMu.Lock()
+	a.weatherSig = sig.String()
+	a.weatherMu.Unlock()
 	return nil
 }
 

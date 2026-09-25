@@ -145,6 +145,7 @@ func (a *App) SetNoteRules(rules []noteRule) error {
 	}
 	a.notesMu.Lock()
 	a.notes = notes
+	a.notesSig = [3]string{}
 	err := saveNotesConfig(a.notes)
 	a.notesMu.Unlock()
 	return err

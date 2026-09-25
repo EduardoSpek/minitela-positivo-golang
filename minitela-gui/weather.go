@@ -105,6 +105,7 @@ func (a *App) SetWeatherConfig(city string) error {
 	// Force an immediate refresh of the forecast to (re)fill the screen.
 	a.weatherMu.Lock()
 	a.weatherLast = nil
+	a.weatherSig = ""
 	a.weatherMu.Unlock()
 	go a.refreshWeather(cfg)
 	return nil
@@ -179,6 +180,7 @@ func (a *App) refreshWeather(cfg weatherConfig) {
 	a.weatherMu.Lock()
 	a.weatherLast = days
 	a.weatherFetchedAt = time.Now()
+	a.weatherSig = "" // new payload: force the next push to write it
 	a.weatherMu.Unlock()
 	runtimeEmit(a.ctx, "weather", a.weatherPayload())
 }
