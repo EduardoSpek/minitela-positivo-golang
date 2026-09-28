@@ -22,6 +22,10 @@ export function GetNoteRule() {
   return window['go']['main']['App']['GetNoteRule']();
 }
 
+export function GetRotationConfig() {
+  return window['go']['main']['App']['GetRotationConfig']();
+}
+
 export function GetSchedules() {
   return window['go']['main']['App']['GetSchedules']();
 }
@@ -74,6 +78,14 @@ export function SetPage(arg1) {
   return window['go']['main']['App']['SetPage'](arg1);
 }
 
+export function SetRotationConfig(arg1) {
+  return window['go']['main']['App']['SetRotationConfig'](arg1);
+}
+
+export function SetRotationEnabled(arg1) {
+  return window['go']['main']['App']['SetRotationEnabled'](arg1);
+}
+
 export function SetSchedules(arg1) {
   return window['go']['main']['App']['SetSchedules'](arg1);
 }
@@ -92,6 +104,10 @@ export function StartMonitor(arg1) {
 
 export function StopMonitor() {
   return window['go']['main']['App']['StopMonitor']();
+}
+
+export function StopRotation() {
+  return window['go']['main']['App']['StopRotation']();
 }
 
 export function UploadGifFile(arg1) {

@@ -22,6 +22,22 @@ export namespace main {
 	        this.fired = source["fired"];
 	    }
 	}
+	export class rotationConfig {
+	    enabled: boolean;
+	    intervalSec: number;
+	    pages: number[];
+	
+	    static createFrom(source: any = {}) {
+	        return new rotationConfig(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.enabled = source["enabled"];
+	        this.intervalSec = source["intervalSec"];
+	        this.pages = source["pages"];
+	    }
+	}
 	export class scheduleRule {
 	    enabled: boolean;
 	    start: string;

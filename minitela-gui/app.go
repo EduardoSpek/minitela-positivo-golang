@@ -65,6 +65,13 @@ type App struct {
 	schedActive    int
 	schedApplied   int
 	schedLastCheck time.Time
+
+	// automatic screen rotation
+	rotMu      sync.Mutex
+	rotRunning bool
+	rotPaused  bool
+	rotStop    chan struct{}
+	rotIdx     int
 }
 
 // NewApp creates a new App application struct
@@ -81,6 +88,8 @@ func (a *App) startup(ctx context.Context) {
 	// Install the global keyboard hook so the dedicated notebook key advances
 	// the mini screen page even when the app does not have focus.
 	installPageHook(a)
+	// Resume the automatic screen rotation when it was left enabled.
+	a.startRotationOnStartup()
 }
 
 // Connect establishes the connection to the Minitela device.
@@ -223,6 +232,7 @@ func (a *App) nextPage() {
 	if err != nil {
 		return
 	}
+	a.onManualPageChange()
 	cur, err := a.currentPage()
 	if err != nil {
 		cur = 0
@@ -251,6 +261,7 @@ func (a *App) GoToPage(page int) error {
 	if page < int(PageNotas) || page > int(PageImagem) {
 		return fmt.Errorf("página inválida: %d", page)
 	}
+	a.onManualPageChange()
 	return a.SetPage(page)
 }
 
@@ -262,6 +273,7 @@ func (a *App) GoToImageSlot(slot int) error {
 	if slot < 1 || slot > 3 {
 		return fmt.Errorf("slot de imagem inválido: %d (use 1..3)", slot)
 	}
+	a.onManualPageChange()
 	return a.SetPage(4 + slot)
 }
 
@@ -588,6 +600,9 @@ func fireDueNote(c *minitela.Client, a *App) (bool, error) {
 	if err := c.SetPage(PageNotas); err != nil {
 		return true, err
 	}
+	// A fired reminder holds the screen: pause the automatic rotation so the
+	// text stays until the user moves on.
+	a.pauseRotation()
 	// Write the reminder text once: a single register write right after the
 	// page flip. Rewriting every register here used to freeze the mini screen.
 	return true, pushNotesTags(c, a)

@@ -12,6 +12,8 @@ export function Disconnect():Promise<void>;
 
 export function GetNoteRule():Promise<main.noteRule>;
 
+export function GetRotationConfig():Promise<main.rotationConfig>;
+
 export function GetSchedules():Promise<Array<main.scheduleRule>>;
 
 export function GetSystemStats():Promise<Record<string, any>>;
@@ -38,6 +40,10 @@ export function SetNoteRule(arg1:main.noteRule):Promise<void>;
 
 export function SetPage(arg1:number):Promise<void>;
 
+export function SetRotationConfig(arg1:main.rotationConfig):Promise<void>;
+
+export function SetRotationEnabled(arg1:boolean):Promise<void>;
+
 export function SetSchedules(arg1:Array<main.scheduleRule>):Promise<void>;
 
 export function SetSystemDateTime(arg1:string):Promise<void>;
@@ -47,6 +53,8 @@ export function SetWeatherConfig(arg1:string):Promise<void>;
 export function StartMonitor(arg1:number):Promise<void>;
 
 export function StopMonitor():Promise<void>;
+
+export function StopRotation():Promise<void>;
 
 export function UploadGifFile(arg1:Array<number>):Promise<void>;
 

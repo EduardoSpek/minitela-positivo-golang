@@ -6,6 +6,7 @@ import {
     StartMonitor, StopMonitor, GetSystemStats,
     GoToPage, GoToImageSlot,
     GetNoteRule, SetNoteRule,
+    GetRotationConfig, SetRotationConfig, SetRotationEnabled, StopRotation,
     GetSchedules, SetSchedules,
     GetWeatherConfig, SetWeatherConfig,
     AutoStartEnabled, SetAutoStartEnabled, CreateShortcut,
@@ -320,6 +321,86 @@ NOTE.week.querySelectorAll('.day-btn').forEach((b) => {
     b.addEventListener('click', () => b.classList.toggle('on'));
 });
 
+// ---- rotação automática de telas ----
+const ROT_MIN = 3;
+const ROT_MAX = 600;
+
+function rotationPagesFromUI() {
+    const pages = [];
+    document.querySelectorAll('#rotationScreens .screen-toggle.on').forEach((b) => {
+        pages.push(Number(b.dataset.page));
+    });
+    return pages;
+}
+
+function setRotationSwitch(on) {
+    const sw = $('swRotation');
+    sw.classList.toggle('on', on);
+    sw.setAttribute('aria-checked', String(on));
+}
+
+async function loadRotationView() {
+    try {
+        const c = await GetRotationConfig();
+        setRotationSwitch(!!c.enabled);
+        if (c.intervalSec) $('rotationInterval').value = c.intervalSec;
+        const pages = Array.isArray(c.pages) ? c.pages.map(Number) : [];
+        document.querySelectorAll('#rotationScreens .screen-toggle').forEach((b) => {
+            b.classList.toggle('on', pages.includes(Number(b.dataset.page)));
+        });
+    } catch (e) { /* ignore */ }
+}
+
+$('swRotation').addEventListener('click', async () => {
+    const on = !$('swRotation').classList.contains('on');
+    setRotationSwitch(on);
+    try {
+        await SetRotationEnabled(on);
+        toast(on ? 'Rotação automática ativada' : 'Rotação automática desativada');
+    } catch (e) {
+        setRotationSwitch(!on);
+        toast('Falha: ' + String(e), 'err');
+    }
+});
+
+$('btnSaveRotation').addEventListener('click', async () => {
+    if (!connected) { tryConnect(); }
+    let intervalSec = parseInt($('rotationInterval').value, 10);
+    if (isNaN(intervalSec)) intervalSec = 10;
+    intervalSec = Math.min(ROT_MAX, Math.max(ROT_MIN, intervalSec));
+    $('rotationInterval').value = intervalSec;
+    const pages = rotationPagesFromUI();
+    try {
+        await SetRotationConfig({
+            enabled: $('swRotation').classList.contains('on'),
+            intervalSec: intervalSec,
+            pages: pages,
+        });
+        toast(pages.length ? `Rotação salva (${pages.length} telas, ${intervalSec}s)` : 'Rotação salva');
+    } catch (e) {
+        toast('Falha ao salvar: ' + String(e), 'err');
+    }
+});
+
+$('btnStopRotation').addEventListener('click', async () => {
+    try {
+        await StopRotation();
+        setRotationSwitch(false);
+        toast('Rotação parada');
+    } catch (e) {
+        toast('Falha: ' + String(e), 'err');
+    }
+});
+
+$('rotationScreens').addEventListener('click', (e) => {
+    const btn = e.target.closest('.screen-toggle');
+    if (btn) btn.classList.toggle('on');
+});
+
+EventsOn('rotation-changed', () => {
+    loadRotationView();
+});
+
 // ---- agenda (pré-definições diárias: horário -> tela + brilho) ----
 const SCHED_PAGES = { 2: 'Notas', 3: 'Monitor', 4: 'Clima', 5: 'Imagem' };
 let scheduleRules = [];
@@ -586,6 +667,7 @@ async function loadAutoStartState() {
     refreshWeatherView();
     loadNotesView();
     loadScheduleView();
+    loadRotationView();
     // Respect the "Conectar na inicialização" preference: connect on launch only
     // when the user enabled it, otherwise leave the device off until asked.
     if (localStorage.getItem(CONNECT_ON_START) === '1') tryConnect();

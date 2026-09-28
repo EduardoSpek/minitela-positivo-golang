@@ -651,6 +651,39 @@ input[type="range"]::-webkit-slider-thumb {
     .note-row { grid-template-columns: 1fr; }
 }
 
+/* ===== Rotation screen ===== */
+.screen-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 8px;
+}
+.screen-toggle {
+    padding: 10px 12px;
+    border: 1px solid var(--line);
+    border-radius: 11px;
+    background: var(--bg-2);
+    color: var(--text-dim);
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.screen-toggle:hover { border-color: var(--accent); color: var(--text); }
+.screen-toggle.on {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+}
+#rotationInterval {
+    width: 140px;
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    color: var(--text);
+    padding: 10px 12px;
+    border-radius: 11px;
+    font-size: 14px;
+}
+
 /* ===== Weather screen ===== */
 .weather-grid {
     display: grid;
