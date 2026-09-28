@@ -43,8 +43,14 @@ Desenvolvido por **Eduardo Spek** — [www.instagram.com/eduardospek](https://ww
 - Durante a janela, o app **confere o brilho a cada 60 s** e o corrige se você mudar no aparelho.
 - Suporta janelas que cruzam a meia-noite (ex.: 22:00 → 06:00).
 
-**Bandeja do sistema**
-- Menu com brilho (100%, 30%, 2%, 1%, Desligado), mostrar janela e sair.
+**Rotação**
+- **Rotação automática**: a minitela passa pelas telas escolhidas em um intervalo configurável (3 a 600 segundos, padrão 10s).
+- Você marca quais telas entram no ciclo: Notas, Monitor, Clima e as 3 imagens (o WhatsApp fica de fora).
+- Um lembrete disparado **pausa** a rotação (o texto fica parado) e ela **retoma** quando você troca de tela; uma troca manual sem lembrete pendente **desliga** a rotação.
+- Durante uma janela da Agenda a rotação tem prioridade na tela (a Agenda segue controlando o brilho).
+- A rotação continua funcionando com o app fechado na bandeja e é retomada ao reabrir o app.
+
+**Bandeja do sistema**- Menu com brilho (100%, 30%, 2%, 1%, Desligado), mostrar janela e sair.
 - Duplo clique no ícone abre a janela.
 - Instância única: abrir o app de novo apenas traz a janela para frente.
 
@@ -68,8 +74,8 @@ Na [página de releases](../../releases) baixe um dos arquivos:
 
 | Arquivo | Descrição |
 |---|---|
-| `Minitela-Go-1.1.0-Setup.exe` | Instalador por usuário (sem precisar de administrador). Cria atalhos no Menu Iniciar e na Área de Trabalho. |
-| `Minitela-Go-1.1.0-portable.zip` | Versão portátil: extraia e execute `minitela-gui.exe`. |
+| `Minitela-Go-1.2.0-Setup.exe` | Instalador por usuário (sem precisar de administrador). Cria atalhos no Menu Iniciar e na Área de Trabalho. |
+| `Minitela-Go-1.2.0-portable.zip` | Versão portátil: extraia e execute `minitela-gui.exe`. |
 
 ### Primeiros passos
 
