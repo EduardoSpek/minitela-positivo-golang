@@ -25,7 +25,8 @@ Desenvolvido por **Eduardo Spek** — [www.instagram.com/eduardospek](https://ww
 - Relógio no topo da tela, sincronizado com o PC.
 
 **Notas**
-- **1 lembrete** com repetição: *uma vez* (data/hora), *todo dia* (hora) ou *dias da semana* (hora + dias marcados).
+- **Vários lembretes** com repetição: *uma vez* (data/hora), *todo dia* (hora) ou *dias da semana* (hora + dias marcados). Use **Novo lembrete** para quantos quiser.
+- A minitela tem um único campo de texto, então **apenas o lembrete mais recente disparado** é exibido. Editar o lembrete exibido não muda a tela; o texto novo entra no próximo disparo. Remover o lembrete exibido volta a mostrar "Sem notas".
 - Ao disparar, o app vira a tela para Notas e o **texto permanece até você trocar de tela**.
 
 **Clima**
@@ -74,8 +75,8 @@ Na [página de releases](../../releases) baixe um dos arquivos:
 
 | Arquivo | Descrição |
 |---|---|
-| `Minitela-Go-1.2.0-Setup.exe` | Instalador por usuário (sem precisar de administrador). Cria atalhos no Menu Iniciar e na Área de Trabalho. |
-| `Minitela-Go-1.2.0-portable.zip` | Versão portátil: extraia e execute `minitela-gui.exe`. |
+| `Minitela-Go-1.3.0-Setup.exe` | Instalador por usuário (sem precisar de administrador). Cria atalhos no Menu Iniciar e na Área de Trabalho. |
+| `Minitela-Go-1.3.0-portable.zip` | Versão portátil: extraia e execute `minitela-gui.exe`. |
 
 ### Primeiros passos
 
@@ -92,7 +93,7 @@ A tela da minitela é controlada por um tema com campos **fixos**. O que existe 
 
 | Tela | O que o tema realmente tem |
 |---|---|
-| **Notas** | **1** campo de texto (`Reminder1`). Por isso o app tem **1 lembrete**. |
+| **Notas** | **1** campo de texto (`Reminder1`). Por isso o app guarda vários lembretes, mas mostra **apenas o mais recente disparado**. |
 | **Clima** | Condição de **hoje + 2 dias**, cidade e faixa de temperatura. Por isso a minitela mostra 3 dias (o app mostra 5 no painel). |
 | **Monitor** | Bateria, Wi-Fi e Bluetooth. **Não há campo de CPU/GPU** no tema. |
 
