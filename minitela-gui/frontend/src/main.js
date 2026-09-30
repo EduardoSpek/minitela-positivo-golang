@@ -5,7 +5,7 @@ import {
     SetBacklight, WriteText,
     StartMonitor, StopMonitor, GetSystemStats,
     GoToPage, GoToImageSlot,
-    GetNoteRule, SetNoteRule,
+    GetNotes, SetNotes,
     GetRotationConfig, SetRotationConfig, SetRotationEnabled, StopRotation,
     GetSchedules, SetSchedules,
     GetWeatherConfig, SetWeatherConfig,
@@ -255,14 +255,10 @@ function bindPageSelectors() {
     });
 }
 
-// ---- notas (1 lembrete: texto + repetição uma vez / todo dia / semanal) ----
-const NOTE = {
-    text: $('note1Text'),
-    mode: $('note1Mode'),
-    once: $('note1Once'),
-    time: $('note1Time'),
-    week: $('note1Week'),
-};
+// ---- notas (N lembretes; a minitela mostra só o mais recente disparado) ----
+const WEEK_DAYS = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
+const WEEK_TITLES = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+let noteRules = [];
 
 function weekdayMaskFromWeek(weekEl) {
     let mask = 0;
@@ -278,47 +274,115 @@ function setWeekMask(weekEl, mask) {
     });
 }
 
-function applyNoteMode() {
-    const mode = NOTE.mode.value;
-    NOTE.once.style.display = mode === 'once' ? '' : 'none';
-    NOTE.time.style.display = mode === 'once' ? 'none' : '';
-    NOTE.week.style.display = mode === 'weekly' ? '' : 'none';
+function applyNoteMode(block) {
+    const mode = block.querySelector('.note-mode').value;
+    block.querySelector('.note-once').style.display = mode === 'once' ? '' : 'none';
+    block.querySelector('.note-daily').style.display = mode === 'once' ? 'none' : '';
+    block.querySelector('.note-week').style.display = mode === 'weekly' ? '' : 'none';
+}
+
+function noteBlockHTML(r, i) {
+    const days = WEEK_DAYS.map((l, d) =>
+        `<button type="button" class="day-btn${(r.weekdayBit >> d) & 1 ? ' on' : ''}" data-day="${d}" title="${WEEK_TITLES[d]}">${l}</button>`
+    ).join('');
+    return `
+        <div class="note-block" data-i="${i}">
+            <div class="note-head">
+                <label class="field-label">Lembrete ${i + 1}</label>
+                <button type="button" class="btn-remove-note" title="Remover">✕</button>
+            </div>
+            <input type="text" class="note-text" value="${(r.text || '').replace(/"/g, '&quot;')}" placeholder="Texto do lembrete..." maxlength="96"/>
+            <div class="note-rep">
+                <select class="note-mode">
+                    <option value="once"${r.mode === 'once' ? ' selected' : ''}>Uma vez</option>
+                    <option value="daily"${r.mode === 'daily' ? ' selected' : ''}>Todo dia</option>
+                    <option value="weekly"${r.mode === 'weekly' ? ' selected' : ''}>Dias da semana</option>
+                </select>
+                <input type="datetime-local" class="note-once" value="${r.onceAt || ''}"/>
+                <input type="time" class="note-daily" value="${r.time || ''}"/>
+                <div class="note-week">${days}</div>
+            </div>
+        </div>`;
+}
+
+function renderNotes() {
+    const wrap = $('notesList');
+    $('notesEmpty').style.display = noteRules.length ? 'none' : '';
+    wrap.innerHTML = noteRules.map(noteBlockHTML).join('');
+
+    wrap.querySelectorAll('.note-block').forEach((block) => {
+        const i = Number(block.dataset.i);
+        const rule = noteRules[i];
+        block.querySelector('.note-mode').addEventListener('change', () => {
+            rule.mode = block.querySelector('.note-mode').value;
+            applyNoteMode(block);
+        });
+        block.querySelector('.note-text').addEventListener('input', (e) => {
+            rule.text = e.target.value;
+        });
+        block.querySelector('.note-once').addEventListener('change', (e) => {
+            rule.onceAt = e.target.value;
+        });
+        block.querySelector('.note-daily').addEventListener('change', (e) => {
+            rule.time = e.target.value;
+        });
+        block.querySelectorAll('.day-btn').forEach((b) => {
+            b.addEventListener('click', () => {
+                const d = Number(b.dataset.day);
+                rule.weekdayBit ^= 1 << d;
+                b.classList.toggle('on');
+            });
+        });
+        block.querySelector('.btn-remove-note').addEventListener('click', () => {
+            noteRules.splice(i, 1);
+            renderNotes();
+        });
+        applyNoteMode(block);
+    });
 }
 
 async function loadNotesView() {
-    applyNoteMode();
     try {
-        const r = await GetNoteRule();
-        if (!r) return;
-        NOTE.text.value = r.text || '';
-        NOTE.mode.value = r.mode || 'once';
-        NOTE.once.value = r.onceAt || '';
-        NOTE.time.value = r.time || '';
-        setWeekMask(NOTE.week, r.weekdayBit || 0);
-        applyNoteMode();
-    } catch (e) { /* ignore */ }
+        const saved = await GetNotes();
+        noteRules = (Array.isArray(saved) ? saved : []).map((r) => ({
+            id: r.id || '',
+            text: r.text || '',
+            mode: r.mode || 'once',
+            onceAt: r.onceAt || '',
+            time: r.time || '',
+            weekdayBit: r.weekdayBit || 0,
+        }));
+        renderNotes();
+    } catch (e) {
+        noteRules = [];
+        renderNotes();
+    }
 }
+
+$('btnAddNote').addEventListener('click', () => {
+    noteRules.push({ id: '', text: '', mode: 'once', onceAt: '', time: '', weekdayBit: 0 });
+    renderNotes();
+    const wrap = $('notesList');
+    wrap.scrollTop = wrap.scrollHeight;
+});
 
 $('btnSaveNotes').addEventListener('click', async () => {
     if (!connected) { tryConnect(); }
     try {
-        const mode = NOTE.mode.value;
-        await SetNoteRule({
-            text: NOTE.text.value,
-            mode: mode,
-            onceAt: mode === 'once' ? NOTE.once.value : '',
-            time: mode === 'once' ? '' : NOTE.time.value,
-            weekdayBit: mode === 'weekly' ? weekdayMaskFromWeek(NOTE.week) : 0,
-        });
-        toast('Lembrete salvo (muda a tela para Notas no horário; o texto fica até você trocar de tela)');
+        const rules = noteRules.map((r) => ({
+            id: r.id,
+            text: r.text,
+            mode: r.mode,
+            onceAt: r.mode === 'once' ? r.onceAt : '',
+            time: r.mode === 'once' ? '' : r.time,
+            weekdayBit: r.mode === 'weekly' ? r.weekdayBit : 0,
+        }));
+        await SetNotes(rules);
+        toast(`Lembretes salvos (${rules.length}). Ao disparar, o mais recente é o exibido.`);
+        await loadNotesView();
     } catch (e) {
         toast('Falha: ' + String(e), 'err');
     }
-});
-
-NOTE.mode.addEventListener('change', applyNoteMode);
-NOTE.week.querySelectorAll('.day-btn').forEach((b) => {
-    b.addEventListener('click', () => b.classList.toggle('on'));
 });
 
 // ---- rotação automática de telas ----

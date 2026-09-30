@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+	"sync/atomic"
 	"time"
 )
 
@@ -15,17 +17,13 @@ const (
 	noteModeWeekly = "weekly" // fires at Time on the selected weekdays
 )
 
-// note holds a scheduled reminder for the Notas screen.
-//
-// Text is the message shown on the device. Mode selects the repetition:
-//   - once:   At carries the exact date/time
-//   - daily:  Time ("HH:MM") fires every day
-//   - weekly: Time fires on the weekdays enabled in Days
-//
-// Fired/FiredAt track whether the note is currently displayed (FiredAt is the
-// moment it fired) and LastFiredDate prevents a repeating note from firing
-// twice on the same date.
+// note is one scheduled reminder. The stock theme has a single text field
+// (register 1090), so the app keeps as many notes as the user wants but only
+// the most recent fired one is shown on the device.
 type note struct {
+	// ID is stable across saves so the app can tell which note is displayed.
+	ID string
+	// Text is the message shown on the device.
 	Text string
 	// At is used by the "once" mode.
 	At time.Time
@@ -40,6 +38,122 @@ type note struct {
 	LastFiredDate string // "2006-01-02", for repeating notes
 }
 
+// noteDisplay is the snapshot of what the device is currently showing. It is
+// deliberately independent from the editable note list: editing a note does
+// not change the screen, and the screen only changes when a note fires (or
+// when the displayed note is removed from the list).
+type noteDisplay struct {
+	ID   string `json:"id"`
+	Text string `json:"text"`
+}
+
+// notesConfig is the on-disk shape. Notes is the editable list; Displayed is the
+// snapshot currently on the mini screen. The legacy "reminder" field is still
+// accepted when reading so older config files are not lost.
+type notesConfig struct {
+	Notes     []note       `json:"notes"`
+	Displayed *noteDisplay `json:"displayed,omitempty"`
+	Reminder  *note        `json:"reminder,omitempty"`
+}
+
+func notesConfigPath() (string, error) {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "minitela-gui.exe", "notes.json"), nil
+}
+
+// loadNotesConfig reads the persisted notes, accepting the current list, the
+// previous single "reminder" and the oldest three-slot array. Notes without a
+// Mode are migrated to "once" and every note gets an ID.
+func loadNotesConfig() ([]note, *noteDisplay) {
+	p, err := notesConfigPath()
+	if err != nil {
+		return nil, nil
+	}
+	b, err := os.ReadFile(p)
+	if err != nil {
+		return nil, nil
+	}
+	var cfg notesConfig
+	if err := json.Unmarshal(b, &cfg); err != nil {
+		return nil, nil
+	}
+	notes := cfg.Notes
+	if len(notes) == 0 && cfg.Reminder != nil && (cfg.Reminder.Text != "" || !cfg.Reminder.At.IsZero()) {
+		notes = append(notes, *cfg.Reminder)
+	}
+	for i := range notes {
+		if notes[i].Mode == "" {
+			notes[i].Mode = noteModeOnce
+		}
+		if notes[i].ID == "" {
+			notes[i].ID = newNoteID()
+		}
+	}
+	disp := cfg.Displayed
+	if disp == nil || disp.Text == "" {
+		// Legacy files have no snapshot: rebuild it from the reminder that
+		// fired most recently, so the screen does not fall back to
+		// "Sem notas" on upgrade.
+		disp = displayedFromNotes(notes)
+	}
+	return notes, disp
+}
+
+// displayedFromNotes returns the snapshot of the most recently fired note, or
+// nil when nothing has fired yet.
+func displayedFromNotes(notes []note) *noteDisplay {
+	best := -1
+	for i := range notes {
+		if notes[i].FiredAt.IsZero() {
+			continue
+		}
+		if best < 0 || notes[i].FiredAt.After(notes[best].FiredAt) {
+			best = i
+		}
+	}
+	if best < 0 {
+		return nil
+	}
+	return &noteDisplay{ID: notes[best].ID, Text: notes[best].Text}
+}
+
+func saveNotesConfig(notes []note, disp *noteDisplay) error {
+	p, err := notesConfigPath()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		return err
+	}
+	b, err := json.MarshalIndent(notesConfig{Notes: notes, Displayed: disp}, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(p, b, 0o600)
+}
+
+// noteIDSeq makes ids unique even when two notes are created in the same
+// nanosecond tick.
+var noteIDSeq atomic.Uint64
+
+// newNoteID returns a short unique id for a note.
+func newNoteID() string {
+	return strconv.FormatInt(time.Now().UnixNano(), 36) +
+		"-" + strconv.FormatUint(noteIDSeq.Add(1), 36)
+}
+
+// notesScreenText returns what the device should display for the Notes screen:
+// the snapshot of the last fired reminder, or the theme placeholder.
+func notesScreenText(disp *noteDisplay) string {
+	if disp != nil && disp.Text != "" {
+		return normalizeText(disp.Text)
+	}
+	return "Sem notas"
+}
+
 // weekdayMaskToBool converts a bitmask (bit 0 = Sunday) into the Days array.
 func weekdayMaskToBool(mask int) [7]bool {
 	var d [7]bool
@@ -51,6 +165,7 @@ func weekdayMaskToBool(mask int) [7]bool {
 
 // noteRule is the frontend-facing shape of a reminder, used by the bindings.
 type noteRule struct {
+	ID         string `json:"id"`
 	Text       string `json:"text"`
 	Mode       string `json:"mode"`
 	OnceAt     string `json:"onceAt"`     // "2006-01-02T15:04" for "once"
@@ -59,105 +174,98 @@ type noteRule struct {
 	Fired      bool   `json:"fired"`
 }
 
-// notesConfig is the on-disk shape. Reminder is the single reminder the stock
-// theme can display; the legacy Notes array is still accepted when reading so
-// an older config file is not lost.
-type notesConfig struct {
-	Reminder note   `json:"reminder"`
-	Notes    []note `json:"notes"`
-}
-
-func notesConfigPath() (string, error) {
-	dir, err := os.UserConfigDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(dir, "minitela-gui.exe", "notes.json"), nil
-}
-
-// loadNotesConfig reads the persisted reminder, accepting both the current
-// single-reminder shape and the legacy three-slot array. Legacy notes without
-// a Mode are migrated to "once".
-func loadNotesConfig() note {
-	var cfg notesConfig
-	p, err := notesConfigPath()
-	if err != nil {
-		return note{}
-	}
-	b, err := os.ReadFile(p)
-	if err != nil {
-		return note{}
-	}
-	if err := json.Unmarshal(b, &cfg); err != nil {
-		return note{}
-	}
-	n := cfg.Reminder
-	if n.Text == "" && n.At.IsZero() {
-		// Legacy file: keep the first reminder that actually has content.
-		for _, old := range cfg.Notes {
-			if old.Text != "" {
-				n = old
-				break
+// GetNotes returns the saved reminder list so the UI can prefill it.
+func (a *App) GetNotes() []noteRule {
+	a.notesMu.Lock()
+	notes := a.notes
+	a.notesMu.Unlock()
+	out := make([]noteRule, 0, len(notes))
+	for _, n := range notes {
+		r := noteRule{ID: n.ID, Text: n.Text, Mode: n.Mode, Time: n.Time, Fired: n.Fired}
+		if n.Mode == noteModeOnce && !n.At.IsZero() {
+			r.OnceAt = n.At.Format("2006-01-02T15:04")
+		}
+		mask := 0
+		for i, on := range n.Days {
+			if on {
+				mask |= 1 << i
 			}
 		}
+		r.WeekdayBit = mask
+		out = append(out, r)
 	}
-	if n.Mode == "" {
-		n.Mode = noteModeOnce
-	}
-	return n
+	return out
 }
 
-func saveNotesConfig(n note) error {
-	p, err := notesConfigPath()
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-		return err
-	}
-	b, err := json.MarshalIndent(notesConfig{Reminder: n}, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(p, b, 0o600)
-}
-
-// GetNoteRule returns the current reminder for the UI to prefill.
-func (a *App) GetNoteRule() noteRule {
-	a.notesMu.Lock()
-	n := a.note
-	a.notesMu.Unlock()
-	r := noteRule{Text: n.Text, Mode: n.Mode, Time: n.Time, Fired: n.Fired}
-	if n.Mode == noteModeOnce && !n.At.IsZero() {
-		r.OnceAt = n.At.Format("2006-01-02T15:04")
-	}
-	mask := 0
-	for i, on := range n.Days {
-		if on {
-			mask |= 1 << i
+// SetNotes stores the whole reminder list. It keeps the fired state of notes
+// that still exist and leaves the displayed snapshot untouched, so saving
+// never clears or changes the mini screen. Removing the displayed note clears
+// the screen instead.
+func (a *App) SetNotes(rules []noteRule) error {
+	incoming := make([]note, 0, len(rules))
+	for i, r := range rules {
+		n, err := r.toNote()
+		if err != nil {
+			return fmt.Errorf("lembrete %d: %w", i+1, err)
 		}
+		n.ID = r.ID
+		incoming = append(incoming, n)
 	}
-	r.WeekdayBit = mask
-	return r
-}
 
-// SetNoteRule validates and stores the reminder, clearing the fired state so a
-// new configuration takes effect at its next due time.
-func (a *App) SetNoteRule(r noteRule) error {
-	n, err := r.toNote()
-	if err != nil {
-		return err
-	}
 	a.notesMu.Lock()
-	a.note = n
-	a.notesSig = ""
-	err = saveNotesConfig(a.note)
+	merged := mergeNotes(a.notes, incoming)
+	disp := a.noteDisp
+	if disp != nil && !containsNoteID(merged, disp.ID) {
+		// The reminder shown on the screen was removed from the list.
+		disp = nil
+		a.noteDisp = nil
+	}
+	a.notes = merged
+	err := saveNotesConfig(a.notes, disp)
 	a.notesMu.Unlock()
 	return err
 }
 
+func containsNoteID(notes []note, id string) bool {
+	if id == "" {
+		return false
+	}
+	for _, n := range notes {
+		if n.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
+// mergeNotes applies the edited list while preserving the fired state of
+// reminders that still exist. Notes without an ID are new: one is generated.
+func mergeNotes(old, incoming []note) []note {
+	byID := make(map[string]note, len(old))
+	for _, n := range old {
+		if n.ID != "" {
+			byID[n.ID] = n
+		}
+	}
+	out := make([]note, 0, len(incoming))
+	for _, n := range incoming {
+		if n.ID == "" {
+			n.ID = newNoteID()
+		}
+		if prev, ok := byID[n.ID]; ok {
+			// Keep the reminder's fire history: the screen must not change
+			// because the user edited the configuration.
+			n.Fired = prev.Fired
+			n.FiredAt = prev.FiredAt
+			n.LastFiredDate = prev.LastFiredDate
+		}
+		out = append(out, n)
+	}
+	return out
+}
+
 func (r noteRule) toNote() (note, error) {
-	n := note{Text: r.Text}
+	n := note{ID: r.ID, Text: r.Text}
 	switch r.Mode {
 	case noteModeOnce:
 		n.Mode = noteModeOnce
@@ -190,9 +298,8 @@ func parseNoteDue(s string) time.Time {
 	return time.Time{}
 }
 
-// noteDue reports whether the note should fire at the given moment, and marks
-// it as fired (updating LastFiredDate for repeating notes). It is a pure
-// decision function: it does NOT mutate the note; the caller applies the
+// noteDue reports whether the note should fire at the given moment. It is a
+// pure decision function: it does NOT mutate the note; the caller applies the
 // result.
 func noteDue(n note, now time.Time) bool {
 	if n.Text == "" {

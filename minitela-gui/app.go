@@ -42,9 +42,11 @@ type App struct {
 	monitorStop    chan struct{}
 	monitorMu      sync.Mutex
 
-	// note state (the single Reminder) for the Notas screen
+	// note state (the reminder list) for the Notas screen
 	notesMu sync.Mutex
-	note    note
+	notes   []note
+	// noteDisp is the snapshot of the text currently shown on the device.
+	noteDisp *noteDisplay
 	// notesSig holds the last text written to the reminder register (1090).
 	// The firmware drops into a no-response state when several SET_REGISTER
 	// frames arrive in a row, so the monitor loop must not rewrite identical
@@ -83,7 +85,7 @@ func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	// Restore persisted reminders so rescheduling survives app restarts.
 	a.notesMu.Lock()
-	a.note = loadNotesConfig()
+	a.notes, a.noteDisp = loadNotesConfig()
 	a.notesMu.Unlock()
 	// Install the global keyboard hook so the dedicated notebook key advances
 	// the mini screen page even when the app does not have focus.
@@ -535,17 +537,6 @@ func (a *App) invalidatePageCaches() {
 	a.weatherMu.Unlock()
 }
 
-// notesScreenText returns the message shown on the Notas screen: the reminder
-// text once it has fired, or the theme placeholder "Sem notas" otherwise. The
-// stock theme's "Reminder" page has a single text widget bound to register
-// 1090 (Reminder1) — verified in its data.json.
-func notesScreenText(n note) string {
-	if n.Fired && n.Text != "" {
-		return normalizeText(n.Text)
-	}
-	return "Sem notas"
-}
-
 // pushNotesTags writes the reminder text to the only register the theme binds on
 // the Notas page (1090 / Reminder1). Writing 1091-1095 was pointless: those
 // registers do not exist in the theme, so the device never answered and each
@@ -555,7 +546,7 @@ func notesScreenText(n note) string {
 // so staying on the Notas page costs no serial traffic.
 func pushNotesTags(c *minitela.Client, a *App) error {
 	a.notesMu.Lock()
-	text := notesScreenText(a.note)
+	text := notesScreenText(a.noteDisp)
 	unchanged := a.notesSig == text
 	a.notesMu.Unlock()
 	if unchanged {
@@ -582,16 +573,28 @@ func fireDueNote(c *minitela.Client, a *App) (bool, error) {
 	now := time.Now()
 	today := now.Format("2006-01-02")
 	a.notesMu.Lock()
-	n := a.note
-	fired := noteDue(n, now)
-	if fired {
-		a.note.Fired = true
-		a.note.FiredAt = now
-		if n.Mode == noteModeDaily || n.Mode == noteModeWeekly {
-			a.note.LastFiredDate = today
+	// The device has a single text field, so the most recent reminder that
+	// comes due wins; any others due in the same tick are just marked fired.
+	fired := false
+	latest := -1
+	for i := range a.notes {
+		n := a.notes[i]
+		if !noteDue(n, now) {
+			continue
 		}
+		a.notes[i].Fired = true
+		a.notes[i].FiredAt = now
+		if n.Mode == noteModeDaily || n.Mode == noteModeWeekly {
+			a.notes[i].LastFiredDate = today
+		}
+		latest = i
+		fired = true
+	}
+	if fired {
+		n := a.notes[latest]
+		a.noteDisp = &noteDisplay{ID: n.ID, Text: n.Text}
 		// Persist the fired state so the notice survives an app restart.
-		_ = saveNotesConfig(a.note)
+		_ = saveNotesConfig(a.notes, a.noteDisp)
 	}
 	a.notesMu.Unlock()
 	if !fired {

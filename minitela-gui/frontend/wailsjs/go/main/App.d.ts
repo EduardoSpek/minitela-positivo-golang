@@ -10,7 +10,7 @@ export function CreateShortcut():Promise<string>;
 
 export function Disconnect():Promise<void>;
 
-export function GetNoteRule():Promise<main.noteRule>;
+export function GetNotes():Promise<Array<main.noteRule>>;
 
 export function GetRotationConfig():Promise<main.rotationConfig>;
 
@@ -36,7 +36,7 @@ export function SetBacklight(arg1:number):Promise<void>;
 
 export function SetDateTime():Promise<void>;
 
-export function SetNoteRule(arg1:main.noteRule):Promise<void>;
+export function SetNotes(arg1:Array<main.noteRule>):Promise<void>;
 
 export function SetPage(arg1:number):Promise<void>;
 

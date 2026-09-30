@@ -1,6 +1,7 @@
 export namespace main {
 	
 	export class noteRule {
+	    id: string;
 	    text: string;
 	    mode: string;
 	    onceAt: string;
@@ -14,6 +15,7 @@ export namespace main {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
 	        this.text = source["text"];
 	        this.mode = source["mode"];
 	        this.onceAt = source["onceAt"];
