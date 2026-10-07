@@ -288,17 +288,29 @@ func waMessageText(msg *events.Message) string {
 // waShouldShow decides whether an incoming message goes to the mini screen:
 // live 1:1 text messages only. No groups, no own messages, no history
 // replays, and nothing older than a small grace after (re)connect.
-func waShouldShow(info types.MessageInfo, text string, connectedAt time.Time) bool {
-	if text == "" || info.IsFromMe || info.IsGroup {
-		return false
+//
+// 1:1 chats may arrive under any user server: the classic phone-number server
+// (s.whatsapp.net) or the newer LID servers ("lid", "hosted.lid") after Meta's
+// identity migration. Only group/status/newsletter servers are excluded.
+func waShouldShow(info types.MessageInfo, text string, connectedAt time.Time) (bool, string) {
+	if text == "" {
+		return false, "sem texto"
 	}
-	if info.Chat.Server != types.DefaultUserServer {
-		return false
+	if info.IsFromMe {
+		return false, "propria"
+	}
+	if info.IsGroup {
+		return false, "grupo"
+	}
+	switch info.Chat.Server {
+	case types.DefaultUserServer, types.HiddenUserServer, types.HostedLIDServer:
+	default:
+		return false, "servidor=" + info.Chat.Server
 	}
 	if info.Timestamp.Before(connectedAt.Add(-2 * time.Minute)) {
-		return false
+		return false, "antiga"
 	}
-	return true
+	return true, "ok"
 }
 
 // waConnectedAt records when the current session came online, so history
@@ -323,7 +335,11 @@ func waEventHandler(evt interface{}) {
 	since := waConnectedAt
 	waConnMu.Unlock()
 	text := waMessageText(msg)
-	if !waShouldShow(msg.Info, text, since) {
+	show, reason := waShouldShow(msg.Info, text, since)
+	waDebugLog(fmt.Sprintf("msg chat=%s sender=%s fromMe=%v group=%v ts=%s text=%q show=%v motivo=%s",
+		msg.Info.Chat.String(), msg.Info.Sender.String(), msg.Info.IsFromMe, msg.Info.IsGroup,
+		msg.Info.Timestamp.Format("15:04:05"), truncateForLog(text), show, reason))
+	if !show {
 		return
 	}
 	sender := msg.Info.PushName
@@ -331,6 +347,31 @@ func waEventHandler(evt interface{}) {
 		sender = "+" + msg.Info.Sender.User
 	}
 	waShowMessage(sender, text)
+}
+
+// waDebugLog appends one line to the WhatsApp diagnostic log in the config
+// dir, so dropped messages can be traced without a debugger attached.
+func waDebugLog(line string) {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return
+	}
+	p := filepath.Join(dir, "minitela-gui.exe", "whatsapp-debug.log")
+	f, err := os.OpenFile(p, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	fmt.Fprintf(f, "%s %s\n", time.Now().Format("2006-01-02 15:04:05"), line)
+}
+
+// truncateForLog shortens text for the debug log without breaking runes.
+func truncateForLog(s string) string {
+	r := []rune(s)
+	if len(r) > 60 {
+		return string(r[:60]) + "..."
+	}
+	return s
 }
 
 // waShowMessage writes sender + text to the WhatsApp page registers (only
@@ -350,17 +391,27 @@ func waShowMessage(sender, text string) {
 
 	c, err := waMinitalaClient()
 	if err != nil {
+		waDebugLog("exibir: minitela offline (" + err.Error() + ")")
+		runtimeEmit(waCtx(), "whatsapp-message", map[string]interface{}{
+			"sender": sender,
+			"text":   text,
+			"error":  "minitela desconectada",
+		})
 		return
 	}
 	if err := c.SetStringTag(minitela.RegNotificationSender, sender); err != nil {
+		waDebugLog("exibir: falha 1140 (" + err.Error() + ")")
 		return
 	}
 	if err := c.SetStringTag(minitela.RegNotificationContent, text); err != nil {
+		waDebugLog("exibir: falha 1141 (" + err.Error() + ")")
 		return
 	}
 	if err := c.SetPage(1); err != nil {
+		waDebugLog("exibir: falha pagina (" + err.Error() + ")")
 		return
 	}
+	waDebugLog("exibir: ok na minitela")
 	waMu.Lock()
 	waLastShown = combined
 	waMu.Unlock()
