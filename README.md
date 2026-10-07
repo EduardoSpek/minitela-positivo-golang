@@ -51,12 +51,17 @@ Desenvolvido por **Eduardo Spek** — [www.instagram.com/eduardospek](https://ww
 - Durante uma janela da Agenda a rotação tem prioridade na tela (a Agenda segue controlando o brilho).
 - A rotação continua funcionando com o app fechado na bandeja e é retomada ao reabrir o app.
 
+**WhatsApp**
+- Conecte sua conta por **QR code** (WhatsApp → Aparelhos conectados); a sessão fica salva e reconecta sozinha.
+- Mensagens de texto **1:1 recebidas** aparecem na tela do WhatsApp da minitela (remetente + texto) e **ficam até você trocar de tela**.
+- Grupos, mensagens próprias e mídias não são exibidos.
+
 **Bandeja do sistema**- Menu com brilho (100%, 30%, 2%, 1%, Desligado), mostrar janela e sair.
 - Duplo clique no ícone abre a janela.
 - Instância única: abrir o app de novo apenas traz a janela para frente.
 
 **Tecla física**
-- A tecla exclusiva do notebook alterna as telas: Notas → Monitor → Clima → Imagem 1 → Imagem 2 → Imagem 3 → Notas.
+- A tecla exclusiva do notebook alterna as telas: WhatsApp → Notas → Monitor → Clima → Imagem 1 → Imagem 2 → Imagem 3 → WhatsApp.
 
 ---
 
@@ -75,8 +80,8 @@ Na [página de releases](../../releases) baixe um dos arquivos:
 
 | Arquivo | Descrição |
 |---|---|
-| `Minitela-Go-1.3.0-Setup.exe` | Instalador por usuário (sem precisar de administrador). Cria atalhos no Menu Iniciar e na Área de Trabalho. |
-| `Minitela-Go-1.3.0-portable.zip` | Versão portátil: extraia e execute `minitela-gui.exe`. |
+| `Minitela-Go-1.4.0-Setup.exe` | Instalador por usuário (sem precisar de administrador). Cria atalhos no Menu Iniciar e na Área de Trabalho. |
+| `Minitela-Go-1.4.0-portable.zip` | Versão portátil: extraia e execute `minitela-gui.exe`. |
 
 ### Primeiros passos
 
@@ -96,6 +101,7 @@ A tela da minitela é controlada por um tema com campos **fixos**. O que existe 
 | **Notas** | **1** campo de texto (`Reminder1`). Por isso o app guarda vários lembretes, mas mostra **apenas o mais recente disparado**. |
 | **Clima** | Condição de **hoje + 2 dias**, cidade e faixa de temperatura. Por isso a minitela mostra 3 dias (o app mostra 5 no painel). |
 | **Monitor** | Bateria, Wi-Fi e Bluetooth. **Não há campo de CPU/GPU** no tema. |
+| **WhatsApp** | **1** campo de remetente + **1** campo de texto (`notification1Sender` / `notification_1_content`). |
 
 O app escreve **apenas** nos registros que o tema aceita. Escrever em registros inexistentes fazia a minitela parar de responder, por isso essa compatibilidade é verificada no `data.json` do tema.
 
@@ -125,7 +131,7 @@ Comandos principais:
 
 | Registro | Nome | Uso |
 |---|---|---|
-| 2 | Página atual | troca de tela (2=Notas, 3=Monitor, 4=Clima, 5/6/7=Imagens) |
+| 2 | Página atual | troca de tela (1=WhatsApp, 2=Notas, 3=Monitor, 4=Clima, 5/6/7=Imagens) |
 | 4 / 5 | Data / Hora | relógio do aparelho |
 | 7 | Backlight | brilho (0–100) |
 | 65 | Animação do tema | — |
@@ -133,10 +139,11 @@ Comandos principais:
 | 1083 | Wifi_SSID | nome da rede |
 | 1085 | BT_Name | nome do dispositivo Bluetooth |
 | 1090 | Reminder1 | texto do lembrete |
+| 1140 / 1141 | notification1Sender / notification_1_content | remetente e texto da mensagem do WhatsApp |
 | 1110 / 1115 / 1120 | Weather_1/2/3_Type | ícone da condição (hoje, +1, +2) |
 | 1119 / 1124 | Weather_2/3_Temp_Desc | data sob a previsão |
 | 1150 | Battery_Type | ícone/tipo de bateria |
-| 2005 | whatsapp_logo | logo do WhatsApp (página 1, desativada) |
+| 2005 | whatsapp_logo | logo do WhatsApp |
 | 2006 | dateHour | relógio no topo da tela |
 | 2027 | city | nome da cidade |
 | 2030 | currentTemp | faixa de temperatura de hoje |

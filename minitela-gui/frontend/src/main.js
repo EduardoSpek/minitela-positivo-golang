@@ -234,7 +234,7 @@ $('btnReconnect').addEventListener('click', async () => {
 // ---- page selectors (alternar entre as telas da minitela) ----
 // Hardware pages are fixed (1=WhatsApp, 2=Notas, 3=Monitor, 4=Clima, 5=Imagem)
 // but WhatsApp is disabled, so only pages 2-5 are selectable.
-const PAGE_NAMES = { 2: 'Notas', 3: 'Monitor', 4: 'Clima', 5: 'Imagem' };
+const PAGE_NAMES = { 1: 'WhatsApp', 2: 'Notas', 3: 'Monitor', 4: 'Clima', 5: 'Imagem' };
 let pageBusy = false;
 function bindPageSelectors() {
     document.querySelectorAll('.page-btn[data-page]').forEach((btn) => {

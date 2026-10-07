@@ -21,8 +21,9 @@ import (
 
 // Firmware page identifiers (pageId written to register 2). Confirmed
 // empirically: the physical key cycles WhatsApp, Notas, Monitor, Clima,
-// Imagem = pageId 1-5. WhatsApp (1) is disabled/excluded from the cycle.
+// Imagem = pageId 1-5.
 const (
+	PageWhatsApp = int32(1)
 	PageNotas    = int32(2)
 	PageMonitor  = int32(3)
 	PageClima    = int32(4)
@@ -226,10 +227,10 @@ func (a *App) SetPage(page int) error {
 	return c.SetPage(int32(page))
 }
 
-// nextPage advances the mini screen to the next page, skipping the disabled
-// WhatsApp page. On the Imagem screen it first cycles through the three
-// image slots (Gif1=5 -> Gif2=6 -> Gif3=7) before wrapping back to Notas:
-// Notas(2)->Monitor(3)->Clima(4)->Gif1(5)->Gif2(6)->Gif3(7)->Notas(2).
+// nextPage advances the mini screen to the next page. On the Imagem screen it
+// first cycles through the three image slots (Gif1=5 -> Gif2=6 -> Gif3=7)
+// before wrapping to WhatsApp and back to Notas:
+// WhatsApp(1)->Notas(2)->Monitor(3)->Clima(4)->Gif1(5)->Gif2(6)->Gif3(7)->WhatsApp(1).
 // Called by the global keyboard hook when the dedicated notebook key is pressed.
 func (a *App) nextPage() {
 	c, err := a.get()
@@ -241,28 +242,32 @@ func (a *App) nextPage() {
 	if err != nil {
 		cur = 0
 	}
-	var next int32
+	_ = c.SetPage(nextPageAfter(cur))
+}
+
+// nextPageAfter is the pure page-cycle step used by nextPage:
+// Gif3(7) wraps to WhatsApp(1), WhatsApp(1) goes to Notas(2), and anything
+// out of range (or a read failure) also lands on Notas.
+func nextPageAfter(cur int32) int32 {
 	switch {
 	case cur >= 5 && cur < 7:
 		// On an image slot: advance to the next image before leaving.
-		next = cur + 1
+		return cur + 1
 	case cur == 7:
-		// Last image slot: wrap back to Notas.
-		next = PageNotas
+		// Last image slot: wrap to WhatsApp.
+		return PageWhatsApp
 	case cur >= PageNotas && cur < PageImagem:
-		next = cur + 1
+		return cur + 1
 	default:
-		// Out of range (e.g. WhatsApp) or read failure: go to Notas.
+		// WhatsApp(1), out of range, or read failure: go to Notas.
 		// Note PageImagem(5) is covered by the image-slot case above.
-		next = PageNotas
+		return PageNotas
 	}
-	_ = c.SetPage(next)
 }
 
-// GoToPage switches the mini screen to a specific page (2-5). Page 1
-// (WhatsApp) is disabled.
+// GoToPage switches the mini screen to a specific page (1-5).
 func (a *App) GoToPage(page int) error {
-	if page < int(PageNotas) || page > int(PageImagem) {
+	if page < int(PageWhatsApp) || page > int(PageImagem) {
 		return fmt.Errorf("página inválida: %d", page)
 	}
 	a.onManualPageChange()
