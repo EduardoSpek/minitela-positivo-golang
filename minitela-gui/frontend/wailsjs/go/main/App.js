@@ -10,12 +10,20 @@ export function Connect(arg1) {
   return window['go']['main']['App']['Connect'](arg1);
 }
 
+export function ConnectWhatsApp() {
+  return window['go']['main']['App']['ConnectWhatsApp']();
+}
+
 export function CreateShortcut() {
   return window['go']['main']['App']['CreateShortcut']();
 }
 
 export function Disconnect() {
   return window['go']['main']['App']['Disconnect']();
+}
+
+export function DisconnectWhatsApp() {
+  return window['go']['main']['App']['DisconnectWhatsApp']();
 }
 
 export function GetNotes() {
@@ -38,6 +46,10 @@ export function GetWeatherConfig() {
   return window['go']['main']['App']['GetWeatherConfig']();
 }
 
+export function GetWhatsAppStatus() {
+  return window['go']['main']['App']['GetWhatsAppStatus']();
+}
+
 export function GoToImageSlot(arg1) {
   return window['go']['main']['App']['GoToImageSlot'](arg1);
 }
@@ -48,6 +60,10 @@ export function GoToPage(arg1) {
 
 export function IsConnected() {
   return window['go']['main']['App']['IsConnected']();
+}
+
+export function LogoutWhatsApp() {
+  return window['go']['main']['App']['LogoutWhatsApp']();
 }
 
 export function RestoreTheme() {

@@ -6,6 +6,7 @@ import {
     StartMonitor, StopMonitor, GetSystemStats,
     GoToPage, GoToImageSlot,
     GetNotes, SetNotes,
+    ConnectWhatsApp, DisconnectWhatsApp, LogoutWhatsApp, GetWhatsAppStatus,
     GetRotationConfig, SetRotationConfig, SetRotationEnabled, StopRotation,
     GetSchedules, SetSchedules,
     GetWeatherConfig, SetWeatherConfig,
@@ -465,6 +466,76 @@ EventsOn('rotation-changed', () => {
     loadRotationView();
 });
 
+// ---- whatsapp (recebe mensagens e mostra na tela do WhatsApp) ----
+const WA_STATE_LABEL = {
+    disconnected: ['Desconectado', 'Pareie com o QR code para começar.'],
+    pairing: ['Aguardando leitura do QR code…', 'Escaneie com o celular em WhatsApp > Aparelhos conectados.'],
+    connected: ['Conectado', 'Mensagens recebidas aparecem na mini tela.'],
+    error: ['Falha na conexão', 'Tente conectar novamente.'],
+};
+
+async function loadWhatsAppView() {
+    try {
+        const s = await GetWhatsAppStatus();
+        renderWaStatus(s.state || 'disconnected', s.phone || '');
+    } catch (e) { /* ignore */ }
+}
+
+function renderWaStatus(state, phone) {
+    const [title, sub] = WA_STATE_LABEL[state] || WA_STATE_LABEL.disconnected;
+    $('waStatusTitle').textContent = phone ? `${title} (${phone})` : title;
+    $('waStatusSub').textContent = sub;
+}
+
+$('btnWaConnect').addEventListener('click', async () => {
+    try {
+        await ConnectWhatsApp();
+        toast('Conectando ao WhatsApp…');
+    } catch (e) {
+        toast('Falha: ' + String(e), 'err');
+    }
+});
+
+$('btnWaDisconnect').addEventListener('click', async () => {
+    try {
+        await DisconnectWhatsApp();
+        $('waQrCard').hidden = true;
+        toast('WhatsApp desconectado');
+    } catch (e) {
+        toast('Falha: ' + String(e), 'err');
+    }
+});
+
+$('btnWaLogout').addEventListener('click', async () => {
+    try {
+        await LogoutWhatsApp();
+        $('waQrCard').hidden = true;
+        toast('Aparelho desvinculado');
+    } catch (e) {
+        toast('Falha: ' + String(e), 'err');
+    }
+});
+
+EventsOn('whatsapp-status', (d) => {
+    if (!d) return;
+    renderWaStatus(d.state || 'disconnected', d.phone || '');
+    if (d.state !== 'pairing') $('waQrCard').hidden = true;
+});
+
+EventsOn('whatsapp-qr', (d) => {
+    if (!d || !d.image) return;
+    $('waQrImg').src = d.image;
+    $('waQrCard').hidden = false;
+});
+
+EventsOn('whatsapp-message', (d) => {
+    if (!d) return;
+    $('waLastSender').textContent = d.sender || '—';
+    $('waLastText').textContent = d.text || '—';
+    $('waLastCard').hidden = false;
+    toast(`WhatsApp: ${d.sender || 'nova mensagem'}`);
+});
+
 // ---- agenda (pré-definições diárias: horário -> tela + brilho) ----
 const SCHED_PAGES = { 2: 'Notas', 3: 'Monitor', 4: 'Clima', 5: 'Imagem' };
 let scheduleRules = [];
@@ -732,6 +803,7 @@ async function loadAutoStartState() {
     loadNotesView();
     loadScheduleView();
     loadRotationView();
+    loadWhatsAppView();
     // Respect the "Conectar na inicialização" preference: connect on launch only
     // when the user enabled it, otherwise leave the device off until asked.
     if (localStorage.getItem(CONNECT_ON_START) === '1') tryConnect();

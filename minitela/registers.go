@@ -29,6 +29,10 @@ const (
 	RegDateHour uint16 = 2006
 	// RegWhatsappLogo is the monitor page's WhatsApp logo visibility flag.
 	RegWhatsappLogo uint16 = 2005
+	// RegNotificationSender/Content are the WhatsApp page (pageId 1) sender
+	// and message text (string registers, stock theme).
+	RegNotificationSender  uint16 = 1140
+	RegNotificationContent uint16 = 1141
 	// RegThemeAnimation controls the theme/layer animation (0/1).
 	RegThemeAnimation uint16 = 65
 

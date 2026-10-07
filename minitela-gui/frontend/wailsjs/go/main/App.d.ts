@@ -6,9 +6,13 @@ export function AutoStartEnabled():Promise<boolean>;
 
 export function Connect(arg1:string):Promise<void>;
 
+export function ConnectWhatsApp():Promise<void>;
+
 export function CreateShortcut():Promise<string>;
 
 export function Disconnect():Promise<void>;
+
+export function DisconnectWhatsApp():Promise<void>;
 
 export function GetNotes():Promise<Array<main.noteRule>>;
 
@@ -20,11 +24,15 @@ export function GetSystemStats():Promise<Record<string, any>>;
 
 export function GetWeatherConfig():Promise<Record<string, any>>;
 
+export function GetWhatsAppStatus():Promise<Record<string, any>>;
+
 export function GoToImageSlot(arg1:number):Promise<void>;
 
 export function GoToPage(arg1:number):Promise<void>;
 
 export function IsConnected():Promise<boolean>;
+
+export function LogoutWhatsApp():Promise<void>;
 
 export function RestoreTheme():Promise<void>;
 
