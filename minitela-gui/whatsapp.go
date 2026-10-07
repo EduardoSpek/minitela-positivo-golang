@@ -12,6 +12,7 @@ import (
 
 	"github.com/skip2/go-qrcode"
 	"go.mau.fi/whatsmeow"
+	"go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
@@ -46,6 +47,7 @@ var (
 	waApp       *App
 	waClient    *whatsmeow.Client
 	waContainer *sqlstore.Container
+	waDB        *sql.DB
 	waState     = waStateDisconnected
 	waPhone     = ""
 	waStarting  = false
@@ -138,6 +140,36 @@ func (a *App) ConnectWhatsApp() error {
 	return nil
 }
 
+// waOpenContainer opens (creating when needed) the session database and
+// returns the container plus the first device, creating one for first pairing.
+func waOpenContainer(ctx context.Context, dbPath string) (*sqlstore.Container, *store.Device, error) {
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
+		return nil, nil, err
+	}
+	db, err := sql.Open("sqlite", "file:"+dbPath+"?cache=shared&_foreign_keys=on")
+	if err != nil {
+		return nil, nil, err
+	}
+	waMu.Lock()
+	if waDB != nil {
+		_ = waDB.Close()
+	}
+	waDB = db
+	waMu.Unlock()
+	container := sqlstore.NewWithDB(db, "sqlite", nil)
+	if err := container.Upgrade(ctx); err != nil {
+		return nil, nil, err
+	}
+	device, err := container.GetFirstDevice(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	if device == nil {
+		device = container.NewDevice()
+	}
+	return container, device, nil
+}
+
 func waConnect() error {
 	ctx := context.Background()
 
@@ -145,23 +177,9 @@ func waConnect() error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
-		return err
-	}
-	db, err := sql.Open("sqlite", dbPath+"?cache=shared")
+	container, device, err := waOpenContainer(ctx, dbPath)
 	if err != nil {
 		return err
-	}
-	container := sqlstore.NewWithDB(db, "sqlite", nil)
-	if err := container.Upgrade(ctx); err != nil {
-		return err
-	}
-	device, err := container.GetFirstDevice(ctx)
-	if err != nil {
-		return err
-	}
-	if device == nil {
-		device = container.NewDevice()
 	}
 
 	client := whatsmeow.NewClient(device, nil)
@@ -245,6 +263,10 @@ func (a *App) LogoutWhatsApp() error {
 	waMu.Lock()
 	waClient = nil
 	waContainer = nil
+	if waDB != nil {
+		_ = waDB.Close()
+		waDB = nil
+	}
 	waLastShown = ""
 	waMu.Unlock()
 	waSetStatus(waStateDisconnected, "")
