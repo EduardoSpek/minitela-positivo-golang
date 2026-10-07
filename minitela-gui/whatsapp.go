@@ -140,8 +140,40 @@ func (a *App) ConnectWhatsApp() error {
 	return nil
 }
 
-// waOpenContainer opens (creating when needed) the session database and
-// returns the container plus the first device, creating one for first pairing.
+// waCloseDB releases the session database handle, if open.
+func waCloseDB() {
+	waMu.Lock()
+	defer waMu.Unlock()
+	if waDB != nil {
+		_ = waDB.Close()
+		waDB = nil
+	}
+}
+
+// waHasSession reports whether a paired session exists (no QR needed).
+func waHasSession() bool {
+	dbPath, err := waDBPath()
+	if err != nil {
+		return false
+	}
+	container, device, err := waOpenContainer(context.Background(), dbPath)
+	if err != nil || device == nil || device.ID == nil {
+		waCloseDB()
+		return false
+	}
+	_ = container
+	return true
+}
+
+// waAutoConnect reconnects in the background when a session already exists.
+// Called once at startup; first pairing always needs the user on the tab.
+func waAutoConnect(a *App) {
+	go func() {
+		if waHasSession() {
+			_ = a.ConnectWhatsApp()
+		}
+	}()
+}
 func waOpenContainer(ctx context.Context, dbPath string) (*sqlstore.Container, *store.Device, error) {
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
 		return nil, nil, err
@@ -150,10 +182,8 @@ func waOpenContainer(ctx context.Context, dbPath string) (*sqlstore.Container, *
 	if err != nil {
 		return nil, nil, err
 	}
+	waCloseDB()
 	waMu.Lock()
-	if waDB != nil {
-		_ = waDB.Close()
-	}
 	waDB = db
 	waMu.Unlock()
 	container := sqlstore.NewWithDB(db, "sqlite", nil)
@@ -263,10 +293,9 @@ func (a *App) LogoutWhatsApp() error {
 	waMu.Lock()
 	waClient = nil
 	waContainer = nil
-	if waDB != nil {
-		_ = waDB.Close()
-		waDB = nil
-	}
+	waMu.Unlock()
+	waCloseDB()
+	waMu.Lock()
 	waLastShown = ""
 	waMu.Unlock()
 	waSetStatus(waStateDisconnected, "")
@@ -336,9 +365,10 @@ func waEventHandler(evt interface{}) {
 	waConnMu.Unlock()
 	text := waMessageText(msg)
 	show, reason := waShouldShow(msg.Info, text, since)
-	waDebugLog(fmt.Sprintf("msg chat=%s sender=%s fromMe=%v group=%v ts=%s text=%q show=%v motivo=%s",
+	waDebugLog(fmt.Sprintf("msg chat=%s sender=%s fromMe=%v group=%v ts=%s type=%s media=%s cat=%s text=%q show=%v motivo=%s",
 		msg.Info.Chat.String(), msg.Info.Sender.String(), msg.Info.IsFromMe, msg.Info.IsGroup,
-		msg.Info.Timestamp.Format("15:04:05"), truncateForLog(text), show, reason))
+		msg.Info.Timestamp.Format("15:04:05"), msg.Info.Type, msg.Info.MediaType, msg.Info.Category,
+		truncateForLog(text), show, reason))
 	if !show {
 		return
 	}

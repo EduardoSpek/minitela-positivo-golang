@@ -84,6 +84,7 @@ func NewApp() *App {
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	waInit(a)
+	waAutoConnect(a)
 	// Restore persisted reminders so rescheduling survives app restarts.
 	a.notesMu.Lock()
 	a.notes, a.noteDisp = loadNotesConfig()
