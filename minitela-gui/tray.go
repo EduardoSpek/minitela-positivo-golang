@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"unsafe"
 
@@ -46,6 +47,7 @@ var (
 	procAppendMenu            = user32.NewProc("AppendMenuW")
 	procSetMenuDefault        = user32.NewProc("SetMenuDefaultItem")
 	procRegisterWindowMessage = user32.NewProc("RegisterWindowMessageW")
+	procPostMessage           = user32.NewProc("PostMessageW")
 )
 
 const (
@@ -58,6 +60,7 @@ const (
 	WM_DESTROY       = 0x0002
 	WM_RBUTTONUP     = 0x0205
 	WM_LBUTTONDOWN   = 0x0201
+	WM_NULL          = 0x0000
 
 	NIF_MESSAGE = 0x00000001
 	NIF_ICON    = 0x00000002
@@ -135,6 +138,13 @@ func startTray(cb *appCallbacks, iconPath string) {
 }
 
 func trayLoop() {
+	// A message queue belongs to the OS thread that created the window, but a
+	// Go goroutine may hop between OS threads. Pin this goroutine to one
+	// thread (same pattern as the keyboard hook) so GetMessage always reads
+	// the tray window's queue; otherwise the icon stays visible but the menu
+	// and double-click stop responding seemingly at random.
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	trayWindowOnce.Do(createTrayWindow)
 	if trayWindowHWND == 0 {
 		return
@@ -270,9 +280,13 @@ func trayWndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		case WM_LBUTTONUP:
 			procSetForeground.Call(trayWindowHWND)
 			showTrayMenu()
+			// MSDN tray-menu fix: posts a benign message so the menu keeps
+			// focus handling correct and dismisses cleanly next time.
+			procPostMessage.Call(trayWindowHWND, WM_NULL, 0, 0)
 		case WM_RBUTTONUP:
 			procSetForeground.Call(trayWindowHWND)
 			showTrayMenu()
+			procPostMessage.Call(trayWindowHWND, WM_NULL, 0, 0)
 		}
 	case WM_COMMAND:
 		menuItemID := int32(wParam)
