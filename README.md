@@ -80,8 +80,8 @@ Na [página de releases](../../releases) baixe um dos arquivos:
 
 | Arquivo | Descrição |
 |---|---|
-| `Minitela-Go-1.4.0-Setup.exe` | Instalador por usuário (sem precisar de administrador). Cria atalhos no Menu Iniciar e na Área de Trabalho. |
-| `Minitela-Go-1.4.0-portable.zip` | Versão portátil: extraia e execute `minitela-gui.exe`. |
+| `Minitela-Go-1.4.1-Setup.exe` | Instalador por usuário (sem precisar de administrador). Cria atalhos no Menu Iniciar e na Área de Trabalho. |
+| `Minitela-Go-1.4.1-portable.zip` | Versão portátil: extraia e execute `minitela-gui.exe`. |
 
 ### Primeiros passos
 
