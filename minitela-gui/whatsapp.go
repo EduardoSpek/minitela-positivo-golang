@@ -52,6 +52,7 @@ var (
 	waPhone     = ""
 	waStarting  = false
 	waQRGen     = 0
+	// waLastShown holds the last displayed message ID (dedupe key).
 	waLastShown = ""
 )
 
@@ -365,8 +366,8 @@ func waEventHandler(evt interface{}) {
 	waConnMu.Unlock()
 	text := waMessageText(msg)
 	show, reason := waShouldShow(msg.Info, text, since)
-	waDebugLog(fmt.Sprintf("msg chat=%s sender=%s fromMe=%v group=%v ts=%s type=%s media=%s cat=%s text=%q show=%v motivo=%s",
-		msg.Info.Chat.String(), msg.Info.Sender.String(), msg.Info.IsFromMe, msg.Info.IsGroup,
+	waDebugLog(fmt.Sprintf("msg id=%s chat=%s sender=%s fromMe=%v group=%v ts=%s type=%s media=%s cat=%s text=%q show=%v motivo=%s",
+		msg.Info.ID, msg.Info.Chat.String(), msg.Info.Sender.String(), msg.Info.IsFromMe, msg.Info.IsGroup,
 		msg.Info.Timestamp.Format("15:04:05"), msg.Info.Type, msg.Info.MediaType, msg.Info.Category,
 		truncateForLog(text), show, reason))
 	if !show {
@@ -376,7 +377,7 @@ func waEventHandler(evt interface{}) {
 	if sender == "" {
 		sender = "+" + msg.Info.Sender.User
 	}
-	waShowMessage(sender, text)
+	waShowMessage(sender, text, msg.Info.ID)
 }
 
 // waDebugLog appends one line to the WhatsApp diagnostic log in the config
@@ -404,16 +405,16 @@ func truncateForLog(s string) string {
 	return s
 }
 
-// waShowMessage writes sender + text to the WhatsApp page registers (only
-// when the content changed), flips to page 1 and holds it like the Notas
-// reminders do (rotation pauses until the user moves on).
-func waShowMessage(sender, text string) {
+// waShowMessage writes sender + text to the WhatsApp page registers, flips
+// to page 1 first (like the Notas reminders do) and holds it (rotation
+// pauses until the user moves on). Every incoming message is shown, even
+// with repeated text: duplicates are filtered by message ID, not content.
+func waShowMessage(sender, text, msgID string) {
 	sender = truncateASCII(normalizeText(sender), waSenderMax)
 	text = truncateASCII(normalizeText(text), waTextMax)
-	combined := sender + "\x00" + text
 
 	waMu.Lock()
-	if combined == waLastShown {
+	if msgID != "" && msgID == waLastShown {
 		waMu.Unlock()
 		return
 	}
@@ -429,6 +430,10 @@ func waShowMessage(sender, text string) {
 		})
 		return
 	}
+	if err := c.SetPage(1); err != nil {
+		waDebugLog("exibir: falha pagina (" + err.Error() + ")")
+		return
+	}
 	if err := c.SetStringTag(minitela.RegNotificationSender, sender); err != nil {
 		waDebugLog("exibir: falha 1140 (" + err.Error() + ")")
 		return
@@ -437,13 +442,9 @@ func waShowMessage(sender, text string) {
 		waDebugLog("exibir: falha 1141 (" + err.Error() + ")")
 		return
 	}
-	if err := c.SetPage(1); err != nil {
-		waDebugLog("exibir: falha pagina (" + err.Error() + ")")
-		return
-	}
 	waDebugLog("exibir: ok na minitela")
 	waMu.Lock()
-	waLastShown = combined
+	waLastShown = msgID
 	waMu.Unlock()
 
 	pauseRotationForMessage()
